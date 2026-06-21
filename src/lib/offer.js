@@ -1,0 +1,101 @@
+import { C, fmt } from "../theme.js";
+
+const esc = (s) =>
+  String(s == null ? "" : s).replace(/[&<>"]/g, (m) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m])
+  );
+
+// Buduje HTML oferty (ten sam dokument w podglądzie i przy druku do PDF).
+// `result` = { items, warnings, totalArea, totalCost, p } ; `meta` = { offerNo, company, client, unit }
+export function buildOfferHTML(result, meta) {
+  const { offerNo = "", company = "", client = "", unit = "PLN" } = meta || {};
+
+  const rows = result.items
+    .map(
+      (it, i) => `
+      <tr>
+        <td class="pos">${esc(it.label || `Pozycja ${i + 1}`)}${
+        it.note ? `<div class="note">${esc(it.note)}</div>` : ""
+      }</td>
+        <td>${fmt(it.width_m)} × ${fmt(it.height_m)}${
+        it.depth_m ? ` × ${fmt(it.depth_m)}` : ""
+      } m<div class="basis">${esc(it.basis)}</div></td>
+        <td>${fmt(it.area)}</td>
+        <td class="right b">${fmt(it.cost)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const warnings =
+    result.warnings && result.warnings.length > 0
+      ? `
+      <div class="warn">
+        <strong>Do potwierdzenia z klientem:</strong>
+        <ul>${result.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>
+      </div>`
+      : "";
+
+  return `<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><title>${esc(offerNo)}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: ${C.ink}; padding: 22mm 18mm; font-size: 12px; background: #fff; }
+        h1 { font-size: 24px; font-weight: 800; }
+        .sub { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: ${C.brass}; font-weight: 700; margin-top: 3px; }
+        .rule { border-bottom: 2px solid ${C.ink}; margin: 10px 0 14px; }
+        .meta { display: flex; justify-content: space-between; color: ${C.steel}; margin-bottom: 4px; }
+        .meta-block { margin-bottom: 14px; line-height: 1.5; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        thead td { background: ${C.ink}; color: ${C.paper}; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 7px 8px; }
+        tbody td { padding: 9px 8px; border-bottom: 1px solid ${C.line}; vertical-align: top; }
+        .pos { font-weight: 600; }
+        .note { font-size: 9px; color: ${C.brass}; font-weight: 400; margin-top: 2px; }
+        .basis { font-size: 8px; color: ${C.steel}; margin-top: 1px; }
+        .right { text-align: right; }
+        .b { font-weight: 700; }
+        tfoot td { background: ${C.ink}; color: ${C.paper}; font-weight: 800; font-size: 14px; padding: 11px 8px; }
+        .warn { margin-top: 16px; padding: 10px 12px; border-left: 4px solid ${C.brass}; background: #faf7f0; font-size: 11px; color: ${C.steel}; }
+        .warn ul { margin: 5px 0 0 16px; }
+        .foot { margin-top: 28px; font-size: 9px; color: ${C.steel}; }
+        .sign { margin-top: 24px; display: flex; justify-content: space-between; font-size: 11px; color: ${C.steel}; }
+        @page { margin: 0; }
+        @media print { body { padding: 16mm 18mm; } }
+      </style></head><body>
+        <h1>${esc(company || "Oferta")}</h1>
+        <div class="sub">Wycena obudów grzejnikowych</div>
+        <div class="rule"></div>
+        <div class="meta"><span>Nr oferty: ${esc(offerNo)}</span><span>Data: ${new Date().toLocaleDateString(
+    "pl-PL"
+  )}</span></div>
+        <div class="meta-block">
+          ${client ? `Dla: <strong>${esc(client)}</strong><br>` : ""}
+          Cena materiału: ${fmt(result.p)} ${esc(unit)}/m²
+        </div>
+        <table>
+          <thead><tr><td>Pozycja</td><td>Wymiary</td><td>m²</td><td class="right">Koszt</td></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td>RAZEM</td><td></td><td>${fmt(result.totalArea)} m²</td><td class="right">${fmt(
+    result.totalCost
+  )} ${esc(unit)}</td></tr></tfoot>
+        </table>
+        ${warnings}
+        <div class="foot">${
+          result.items.some((i) => i.basis && i.basis.startsWith("pełna"))
+            ? "Wycena obejmuje powierzchnię obudowy (front, boki i górę)."
+            : "Wycena obejmuje powierzchnię frontu obudowy."
+        } Ceny netto, oferta ważna 14 dni.</div>
+        <div class="sign"><span>Akceptacja klienta: ...................................</span><span>Data: ......................</span></div>
+      </body></html>`;
+}
+
+// Otwiera ofertę w nowym oknie i wywołuje druk (użytkownik wybiera „Zapisz jako PDF").
+export function printOffer(result, meta) {
+  const html = buildOfferHTML(result, meta);
+  const w = window.open("", "_blank");
+  if (!w) return false;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 250);
+  return true;
+}
