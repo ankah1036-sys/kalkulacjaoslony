@@ -157,7 +157,26 @@ export default function Quotes({ onEdit }) {
     else setRows((r) => r.filter((x) => x.id !== row.id));
   };
 
-  const statusLabel = { draft: "Szkic", sent: "Wysłana", accepted: "Zaakceptowana", rejected: "Odrzucona" };
+  // Etapy życia wyceny — pokazywane jako klikana lista (zmiana zapisuje się od razu w bazie).
+  const STATUS = {
+    draft:     { label: "Robocza",            color: C.steel },
+    sent:      { label: "Wysłana do klienta", color: C.brass },
+    accepted:  { label: "Zaakceptowana",      color: C.green },
+    completed: { label: "Zrealizowana",       color: C.ink },
+    rejected:  { label: "Odrzucona",          color: C.red },
+  };
+  const STATUS_ORDER = ["draft", "sent", "accepted", "completed", "rejected"];
+
+  // Zmiana statusu z rozwijanej listy — natychmiastowy zapis, z cofnięciem gdy błąd.
+  const changeStatus = async (row, next) => {
+    const prev = row.status;
+    setRows((rs) => rs.map((x) => (x.id === row.id ? { ...x, status: next } : x)));
+    const { error } = await supabase.from("quotes").update({ status: next }).eq("id", row.id);
+    if (error) {
+      setRows((rs) => rs.map((x) => (x.id === row.id ? { ...x, status: prev } : x)));
+      setError("Nie udało się zmienić statusu. " + toPolish(error, "Spróbuj ponownie."));
+    }
+  };
 
   return (
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
@@ -183,7 +202,7 @@ export default function Quotes({ onEdit }) {
         </div>
       ) : (
         <div style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.2fr 0.9fr 0.9fr 1.3fr", padding: "10px 14px", borderBottom: `1px solid ${C.ink}`, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr 1.2fr 0.85fr 1.25fr", padding: "10px 14px", borderBottom: `1px solid ${C.ink}`, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel }}>
             <div>Nr / data</div>
             <div>Klient</div>
             <div>Status</div>
@@ -191,7 +210,7 @@ export default function Quotes({ onEdit }) {
             <div style={{ textAlign: "right" }}>Akcje</div>
           </div>
           {filtered.map((r) => (
-            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 1.2fr 0.9fr 0.9fr 1.3fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center" }}>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr 1.2fr 0.85fr 1.25fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center" }}>
               <div>
                 <div style={{ fontWeight: 600 }}>{r.offer_no || "—"}</div>
                 <div style={{ fontSize: 11, color: C.steel }}>{new Date(r.created_at).toLocaleDateString("pl-PL")}</div>
@@ -201,9 +220,29 @@ export default function Quotes({ onEdit }) {
               </div>
               <div style={{ fontSize: 13 }}>{r.clients?.name || <span style={{ color: C.line }}>—</span>}</div>
               <div style={{ fontSize: 12 }}>
-                <span style={{ padding: "3px 8px", background: C.paper, border: `1px solid ${C.line}`, fontWeight: 700, color: C.steel }}>
-                  {statusLabel[r.status] || r.status}
-                </span>
+                <select
+                  value={STATUS[r.status] ? r.status : "draft"}
+                  onChange={(e) => changeStatus(r, e.target.value)}
+                  title="Zmień etap wyceny"
+                  style={{
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    maxWidth: "100%",
+                    padding: "5px 8px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#fff",
+                    background: (STATUS[r.status] || STATUS.draft).color,
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  {STATUS_ORDER.map((s) => (
+                    <option key={s} value={s} style={{ background: "#fff", color: C.ink }}>
+                      {STATUS[s].label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontWeight: 700 }}>{fmt(Number(r.total_cost) * (1 + (Number(r.vat_rate) || 0) / 100))} {r.currency}</div>

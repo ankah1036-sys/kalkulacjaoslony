@@ -73,7 +73,7 @@ create table public.quotes (
   surface_mode text not null default 'auto' check (surface_mode in ('auto','front','full')),
   total_area   numeric(14,4),
   total_cost   numeric(14,2),
-  status       text not null default 'draft' check (status in ('draft','sent','accepted','rejected')),
+  status       text not null default 'draft' check (status in ('draft','sent','accepted','completed','rejected')),
   warnings     jsonb not null default '[]'::jsonb,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
