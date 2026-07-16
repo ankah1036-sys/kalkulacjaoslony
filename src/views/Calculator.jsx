@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { computeResult } from "../lib/calc.js";
-import { parseDimensionsFromText } from "../lib/parseText.js";
+import { parseDimensionsFromText, extractMaterialFromText } from "../lib/parseText.js";
 import { readTextFromImage } from "../lib/ocr.js";
 import { createOrganization } from "../lib/org.js";
 import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
@@ -152,7 +152,13 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     // Treść maila: odczyt lokalny — bez API, natychmiast i bez kosztów.
     if (tab === "text") {
       const parsed = parseDimensionsFromText(emailText);
-      setResult(computeResult(parsed.items, parsed.warnings, p, surfaceMode, vatNum()));
+      const warnings = [...parsed.warnings];
+      const mat = extractMaterialFromText(emailText);
+      if (mat && !material.trim()) {
+        setMaterial(mat);
+        warnings.push(`Materiał odczytany z treści: „${mat}” — sprawdź i popraw, jeśli trzeba.`);
+      }
+      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum()));
       return;
     }
 
@@ -175,6 +181,11 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
       const warnings = [...parsed.warnings];
       if (parsed.items.length > 0) {
         warnings.unshift("Wymiary odczytano automatycznie ze zdjęcia — sprawdź je, zanim wyślesz ofertę klientowi.");
+      }
+      const mat = extractMaterialFromText(text);
+      if (mat && !material.trim()) {
+        setMaterial(mat);
+        warnings.push(`Materiał odczytany ze zdjęcia: „${mat}” — sprawdź i popraw, jeśli trzeba.`);
       }
       setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum()));
     } catch (err) {

@@ -89,6 +89,61 @@ function parseLabeledDimensions(text) {
   return { item, warnings };
 }
 
+// --- Odczyt materiału z treści (np. „MDF 18 mm, lakier RAL 7035") ---
+// Składa opis z trzech kawałków: rodzaj płyty + grubość, wykończenie, kolor RAL.
+// Rozpoznaje częste zapisy z prawdziwych maili; gdy nic nie pasuje — zwraca "".
+const MATERIAL_TERMS = [
+  [/\bMDF\b/i, "MDF"],
+  [/\bHDF\b/i, "HDF"],
+  [/sklejk\w*/i, "sklejka"],
+  [/p[łl]yt\w*\s+wi[óo]row\w*/i, "płyta wiórowa"],
+  [/p[łl]yt\w*\s+meblow\w*/i, "płyta meblowa"],
+  [/\bp[łl]yt\w*/i, "płyta"],
+  [/blach\w*/i, "blacha"],
+  [/\b(?:stal|stalow\w+)\b/i, "stal"],
+  [/aluminiow\w*|aluminium/i, "aluminium"],
+  [/\bmetal\w*/i, "metal"],
+  [/pleksi\w*|plexi\w*|pleksa/i, "pleksi"],
+  [/d[ęe]bow\w*|\bd[ąa]b\b/i, "dąb"],
+  [/sosn\w*/i, "sosna"],
+  [/drewn\w*|drewnian\w*/i, "drewno"],
+];
+
+// Grubość: „grubość 18 mm", „gr. 18", albo „MDF 18 mm" (materiał tuż przy liczbie).
+function findThickness(text) {
+  // „grubość"/„gr." + liczba — dozwolony odstęp (polskie „ść" nie jest znakiem \w).
+  let m = text.match(/(?:grubo|\bgr\.?)[^0-9]{0,15}?(\d{1,3})\s*mm?\b/i);
+  if (m) return `${m[1]} mm`;
+  // Materiał tuż przy liczbie: „MDF 18 mm", „sklejka 12mm".
+  m = text.match(/\b(?:MDF|HDF|p[łl]yt\w*|sklejk\w*|blach\w*)\s*[:\-]?\s*(\d{1,2})\s*mm\b/i);
+  if (m) return `${m[1]} mm`;
+  return "";
+}
+
+export function extractMaterialFromText(text) {
+  const t = String(text || "");
+  const parts = [];
+
+  let base = "";
+  for (const [re, name] of MATERIAL_TERMS) {
+    if (re.test(t)) { base = name; break; }
+  }
+  const thickness = findThickness(t);
+  if (base && thickness) parts.push(`${base} ${thickness}`);
+  else if (base) parts.push(base);
+  else if (thickness) parts.push(thickness);
+
+  if (/lakier\w*/i.test(t)) parts.push("lakier");
+  else if (/malowan\w*/i.test(t)) parts.push("malowany");
+  else if (/oklein\w*/i.test(t)) parts.push("okleina");
+  else if (/fornir\w*/i.test(t)) parts.push("fornir");
+
+  const ral = t.match(/\bRAL\s?(\d{3,4})\b/i);
+  if (ral) parts.push(`RAL ${ral[1]}`);
+
+  return parts.join(", ");
+}
+
 export function parseDimensionsFromText(text) {
   const warnings = [];
   const items = [];
