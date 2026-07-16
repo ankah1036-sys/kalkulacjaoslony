@@ -371,6 +371,11 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         )}
       </div>
 
+      <label style={{ display: "block", marginBottom: 20 }}>
+        <div style={lbl}>Materiał</div>
+        <input value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="np. MDF 18 mm, lakier RAL 7035" style={inp} />
+      </label>
+
       <div style={{ marginBottom: 20 }}>
         <div style={lbl}>Co liczymy</div>
         <div style={{ display: "flex", gap: 0 }}>
@@ -539,10 +544,6 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
                   <input value={offerNo} onChange={(e) => setOfferNo(e.target.value)} style={inp} />
                 </label>
               </div>
-              <label style={{ display: "block", marginTop: 12 }}>
-                <div style={lbl}>Materiał</div>
-                <input value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="np. MDF 18 mm, lakier RAL 7035" style={inp} />
-              </label>
             </div>
           )}
 
