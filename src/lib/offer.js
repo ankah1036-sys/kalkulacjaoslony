@@ -176,6 +176,77 @@ export function buildOfferHTML(result, meta) {
       </body></html>`;
 }
 
+// Buduje HTML zlecenia na produkcję/pakowanie — jak oferta, ale BEZ cen
+// (materiał, wymiary, powierzchnia, akcesoria z ilościami).
+export function buildProductionHTML(result, meta) {
+  const { offerNo = "", client = "", material = "" } = meta || {};
+
+  const rows = result.items
+    .map(
+      (it, i) => `
+      <tr>
+        <td class="pos">${esc(it.label || `Pozycja ${i + 1}`)}${
+        it.note ? `<div class="note">${esc(it.note)}</div>` : ""
+      }</td>
+        <td>${fmt(it.width_m)} × ${fmt(it.height_m)}${
+        it.depth_m ? ` × ${fmt(it.depth_m)}` : ""
+      } m<div class="basis">${esc(it.basis)}</div></td>
+        <td class="right">${fmt(it.area)} m²</td>
+      </tr>`
+    )
+    .join("");
+
+  const accRows = (result.accessories || [])
+    .map(
+      (a) => `
+      <tr>
+        <td class="pos">${esc(a.name || "Akcesorium")}<div class="basis">akcesorium</div></td>
+        <td>—</td>
+        <td class="right b">${fmt(a.qty)} szt.</td>
+      </tr>`
+    )
+    .join("");
+
+  return `<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><title>Produkcja ${esc(offerNo)}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; color: ${C.ink}; padding: 22mm 18mm; font-size: 12px; background: #fff; }
+        h1 { font-size: 24px; font-weight: 800; }
+        .sub { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: ${C.brass}; font-weight: 700; margin-top: 3px; }
+        .rule { border-bottom: 2px solid ${C.ink}; margin: 10px 0 14px; }
+        .meta { display: flex; justify-content: space-between; color: ${C.steel}; margin-bottom: 4px; }
+        .meta-block { margin-bottom: 14px; line-height: 1.5; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        thead td { background: ${C.ink}; color: ${C.paper}; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 7px 8px; }
+        tbody td { padding: 9px 8px; border-bottom: 1px solid ${C.line}; vertical-align: top; }
+        .pos { font-weight: 600; }
+        .note { font-size: 9px; color: ${C.brass}; font-weight: 400; margin-top: 2px; }
+        .basis { font-size: 8px; color: ${C.steel}; margin-top: 1px; }
+        .right { text-align: right; }
+        .b { font-weight: 700; }
+        .banner { margin-top: 6px; padding: 8px 12px; border-left: 4px solid ${C.brass}; background: #faf7f0; font-size: 11px; color: ${C.steel}; font-weight: 700; }
+        .foot { margin-top: 28px; font-size: 9px; color: ${C.steel}; }
+        .sign { margin-top: 24px; display: flex; justify-content: space-between; font-size: 11px; color: ${C.steel}; }
+        @page { margin: 0; }
+        @media print { body { padding: 16mm 18mm; } }
+      </style></head><body>
+        <h1>${esc(COMPANY_NAME)}</h1>
+        <div class="sub">Zlecenie na produkcję / pakowanie</div>
+        <div class="rule"></div>
+        <div class="meta"><span>Nr oferty: ${esc(offerNo)}</span><span>Data: ${new Date().toLocaleDateString("pl-PL")}</span></div>
+        <div class="meta-block">
+          ${client ? `Klient: <strong>${esc(client)}</strong><br>` : ""}
+          ${material ? `Materiał: <strong>${esc(material)}</strong>` : ""}
+        </div>
+        <table>
+          <thead><tr><td>Pozycja</td><td>Wymiary</td><td class="right">Powierzchnia / ilość</td></tr></thead>
+          <tbody>${rows}${accRows}</tbody>
+        </table>
+        <div class="banner">Dokument dla produkcji — bez cen. Wymiary wg zaakceptowanej oferty.</div>
+        <div class="sign"><span>Wykonano: ...................................</span><span>Data: ......................</span></div>
+      </body></html>`;
+}
+
 // Otwiera ofertę w nowym oknie i wywołuje druk (użytkownik wybiera „Zapisz jako PDF").
 export function printOffer(result, meta) {
   const html = buildOfferHTML(result, meta);

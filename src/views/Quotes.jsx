@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
-import { buildOfferHTML, buildOfferEmailBody, buildProductionEmailBody } from "../lib/offer.js";
+import { buildOfferHTML, buildOfferEmailBody, buildProductionEmailBody, buildProductionHTML } from "../lib/offer.js";
 import { accessoryTotals } from "../lib/calc.js";
 import SentDialog from "./SentDialog.jsx";
 import { toPolish } from "../lib/errors.js";
@@ -18,6 +18,7 @@ export default function Quotes({ onEdit }) {
   const [openMenuId, setOpenMenuId] = useState(null); // który wiersz ma otwarte menu „⋮"
   const [previewHTML, setPreviewHTML] = useState("");
   const [previewData, setPreviewData] = useState(null); // { result, offerNo, client, unit } — do maila
+  const [previewKind, setPreviewKind] = useState("offer"); // "offer" | "production"
   const [showPreview, setShowPreview] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [sent, setSent] = useState(null); // po wysyłce: { to, offerNo, title?, docWord?, hint? } (null = zamknięty)
@@ -92,6 +93,7 @@ export default function Quotes({ onEdit }) {
       });
       setPreviewHTML(html);
       setPreviewData({ result, offerNo: row.offer_no, client: row.clients?.name || "", unit: row.currency, material: full?.material || "" });
+      setPreviewKind("offer");
       setShowPreview(true);
     } catch (e) {
       setError("Nie udało się otworzyć oferty. " + toPolish(e, "Spróbuj ponownie."));
@@ -110,8 +112,8 @@ export default function Quotes({ onEdit }) {
     setSent({ to: to || "", offerNo });
   };
 
-  // Wysyłka zlecenia na produkcję (bez cen). Dostępna spod „⋮" tylko dla wyceny „Zaakceptowana".
-  const sendToProduction = async (row) => {
+  // Podgląd zlecenia na produkcję (bez cen). Spod „⋮" tylko dla wyceny „Zaakceptowana".
+  const openProductionPreview = async (row) => {
     setBusyId(row.id);
     setError("");
     try {
@@ -123,30 +125,37 @@ export default function Quotes({ onEdit }) {
         .single();
       const accT = accessoryTotals(full?.accessories, Number(full?.vat_rate) || 0);
       const result = { items: items || [], accessories: accT.items };
-      const body = buildProductionEmailBody(result, {
-        offerNo: row.offer_no,
-        client: row.clients?.name || "",
-        material: full?.material || "",
-      });
-      const subject = `Zlecenie na produkcję ${row.offer_no || ""} — ${COMPANY_NAME}`;
-      window.location.href = `mailto:${PRODUCTION_EMAIL || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      setSent({
-        to: PRODUCTION_EMAIL || "",
-        offerNo: row.offer_no,
-        title: "Zlecenie przekazane do produkcji",
-        docWord: "treścią zlecenia",
-        hint: (
-          <>
-            To dokument dla produkcji — <strong style={{ color: C.ink }}>bez cen</strong>.{" "}
-            {PRODUCTION_EMAIL ? "Sprawdź i wyślij ze swojej skrzynki." : "Wpisz adres produkcji i wyślij ze swojej skrzynki."}
-          </>
-        ),
-      });
+      const meta = { offerNo: row.offer_no, client: row.clients?.name || "", material: full?.material || "" };
+      setPreviewHTML(buildProductionHTML(result, meta));
+      setPreviewData({ result, offerNo: row.offer_no, client: row.clients?.name || "", material: full?.material || "" });
+      setPreviewKind("production");
+      setShowPreview(true);
     } catch (e) {
-      setError("Nie udało się przygotować zlecenia na produkcję. " + toPolish(e, "Spróbuj ponownie."));
+      setError("Nie udało się otworzyć zlecenia na produkcję. " + toPolish(e, "Spróbuj ponownie."));
     } finally {
       setBusyId(null);
     }
+  };
+
+  // Wysyłka zlecenia na produkcję — z poziomu podglądu (przycisk „Wyślij na produkcję").
+  const sendProductionMail = () => {
+    if (!previewData) return;
+    const { result, offerNo, client, material } = previewData;
+    const subject = `Zlecenie na produkcję ${offerNo || ""} — ${COMPANY_NAME}`;
+    const body = buildProductionEmailBody(result, { offerNo, client, material });
+    window.location.href = `mailto:${PRODUCTION_EMAIL || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setSent({
+      to: PRODUCTION_EMAIL || "",
+      offerNo,
+      title: "Zlecenie przekazane do produkcji",
+      docWord: "treścią zlecenia",
+      hint: (
+        <>
+          To dokument dla produkcji — <strong style={{ color: C.ink }}>bez cen</strong>.{" "}
+          {PRODUCTION_EMAIL ? "Sprawdź i wyślij ze swojej skrzynki." : "Wpisz adres produkcji i wyślij ze swojej skrzynki."}
+        </>
+      ),
+    });
   };
 
   const previewClientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((previewData?.client || "").trim());
@@ -326,7 +335,7 @@ export default function Quotes({ onEdit }) {
                       <button onClick={() => { setOpenMenuId(null); edit(r); }} style={menuItem}>Edytuj</button>
                       <button onClick={() => { setOpenMenuId(null); openPdf(r); }} style={menuItem}>PDF</button>
                       {r.status === "accepted" && (
-                        <button onClick={() => { setOpenMenuId(null); sendToProduction(r); }} style={{ ...menuItem, color: C.green, fontWeight: 700 }}>
+                        <button onClick={() => { setOpenMenuId(null); openProductionPreview(r); }} style={{ ...menuItem, color: C.green, fontWeight: 700 }}>
                           ✉ Wyślij na produkcję
                         </button>
                       )}
@@ -356,34 +365,49 @@ export default function Quotes({ onEdit }) {
           <div onClick={() => setShowPreview(false)} style={{ position: "absolute", inset: 0, background: "rgba(28,30,34,0.45)" }} />
           <div style={{ position: "relative", width: "min(620px, 94vw)", height: "100%", background: C.paper, boxShadow: "-8px 0 40px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `2px solid ${C.ink}`, background: C.paper }}>
-              <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 }}>Podgląd oferty</div>
+              <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 }}>
+                {previewKind === "production" ? "Podgląd zlecenia · produkcja" : "Podgląd oferty"}
+              </div>
               <button onClick={() => setShowPreview(false)} style={{ border: "none", background: "transparent", fontSize: 22, cursor: "pointer", color: C.steel, lineHeight: 1 }}>×</button>
             </div>
             <div style={{ flex: 1, overflow: "auto", padding: 16, background: "#9b958a" }}>
               <iframe ref={iframeRef} title="Podgląd oferty" srcDoc={previewHTML} style={{ width: "100%", minHeight: 760, border: "none", background: "#fff", boxShadow: "0 4px 18px rgba(0,0,0,0.25)" }} />
             </div>
             <div style={{ padding: "12px 18px 0", display: "flex", gap: 10, background: C.paper }}>
-              <button
-                onClick={() => sendOffer((previewData?.client || "").trim())}
-                disabled={!previewClientIsEmail}
-                title={previewClientIsEmail ? "" : "Ta wycena nie ma zapisanego e-maila klienta"}
-                style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: previewClientIsEmail ? "pointer" : "not-allowed", border: `1px solid ${C.ink}`, background: previewClientIsEmail ? "#fff" : C.paper, color: previewClientIsEmail ? C.ink : C.line }}
-              >
-                ✉ Do klienta
-              </button>
-              <button
-                onClick={() => sendOffer(COMPANY_EMAIL)}
-                style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "#fff", color: C.ink }}
-              >
-                ✉ Do biura RELF
-              </button>
+              {previewKind === "production" ? (
+                <button
+                  onClick={sendProductionMail}
+                  style={{ flex: 1, padding: "11px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, cursor: "pointer", border: "none", background: C.green, color: "#fff" }}
+                >
+                  ✉ Wyślij na produkcję
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => sendOffer((previewData?.client || "").trim())}
+                    disabled={!previewClientIsEmail}
+                    title={previewClientIsEmail ? "" : "Ta wycena nie ma zapisanego e-maila klienta"}
+                    style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: previewClientIsEmail ? "pointer" : "not-allowed", border: `1px solid ${C.ink}`, background: previewClientIsEmail ? "#fff" : C.paper, color: previewClientIsEmail ? C.ink : C.line }}
+                  >
+                    ✉ Do klienta
+                  </button>
+                  <button
+                    onClick={() => sendOffer(COMPANY_EMAIL)}
+                    style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "#fff", color: C.ink }}
+                  >
+                    ✉ Do biura RELF
+                  </button>
+                </>
+              )}
             </div>
             <div style={{ padding: "10px 18px", display: "flex", gap: 10, background: C.paper }}>
               <button onClick={() => setShowPreview(false)} style={{ flex: "0 0 auto", padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Zamknij</button>
               <button onClick={printPreview} disabled={pdfLoading} style={{ flex: 1, padding: "12px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", cursor: pdfLoading ? "wait" : "pointer", border: "none", background: C.green, color: "#fff" }}>{pdfLoading ? "Otwieram…" : "↓ Zapisz / drukuj PDF"}</button>
             </div>
             <div style={{ padding: "0 18px 12px", fontSize: 11, color: C.steel, background: C.paper }}>
-              Mail otwiera Twój program pocztowy z treścią oferty; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF").
+              {previewKind === "production"
+                ? "To dokument bez cen — dla produkcji. Mail otwiera Twój program pocztowy; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF”)."
+                : "Mail otwiera Twój program pocztowy z treścią oferty; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF”)."}
             </div>
           </div>
         </div>
