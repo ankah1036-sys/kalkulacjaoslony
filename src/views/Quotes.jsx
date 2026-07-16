@@ -151,7 +151,7 @@ export default function Quotes({ onEdit }) {
       docWord: "treścią zlecenia",
       hint: (
         <>
-          To dokument dla produkcji — <strong style={{ color: C.ink }}>bez cen</strong>.{" "}
+          Zlecenie dla produkcji.{" "}
           {PRODUCTION_EMAIL ? "Sprawdź i wyślij ze swojej skrzynki." : "Wpisz adres produkcji i wyślij ze swojej skrzynki."}
         </>
       ),
@@ -401,12 +401,14 @@ export default function Quotes({ onEdit }) {
               )}
             </div>
             <div style={{ padding: "10px 18px", display: "flex", gap: 10, background: C.paper }}>
-              <button onClick={() => setShowPreview(false)} style={{ flex: "0 0 auto", padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Zamknij</button>
-              <button onClick={printPreview} disabled={pdfLoading} style={{ flex: 1, padding: "12px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", cursor: pdfLoading ? "wait" : "pointer", border: "none", background: C.green, color: "#fff" }}>{pdfLoading ? "Otwieram…" : "↓ Zapisz / drukuj PDF"}</button>
+              <button onClick={() => setShowPreview(false)} style={{ flex: previewKind === "production" ? 1 : "0 0 auto", padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Zamknij</button>
+              {previewKind !== "production" && (
+                <button onClick={printPreview} disabled={pdfLoading} style={{ flex: 1, padding: "12px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", cursor: pdfLoading ? "wait" : "pointer", border: "none", background: C.green, color: "#fff" }}>{pdfLoading ? "Otwieram…" : "↓ Zapisz / drukuj PDF"}</button>
+              )}
             </div>
             <div style={{ padding: "0 18px 12px", fontSize: 11, color: C.steel, background: C.paper }}>
               {previewKind === "production"
-                ? "To dokument bez cen — dla produkcji. Mail otwiera Twój program pocztowy; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF”)."
+                ? "Mail otwiera Twój program pocztowy z treścią zlecenia dla produkcji."
                 : "Mail otwiera Twój program pocztowy z treścią oferty; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF”)."}
             </div>
           </div>

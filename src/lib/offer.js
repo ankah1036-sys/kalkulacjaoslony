@@ -56,7 +56,7 @@ export function buildProductionEmailBody(result, meta) {
     ...rows,
     ...(accRows.length ? ["", "Akcesoria:", ...accRows] : []),
     "",
-    "Dokument roboczy dla produkcji — bez cen. Wymiary wg zaakceptowanej oferty.",
+    "Dokument roboczy dla produkcji. Wymiary wg zaakceptowanej oferty.",
     "",
     COMPANY_NAME,
   ].join("\n");
@@ -242,7 +242,7 @@ export function buildProductionHTML(result, meta) {
           <thead><tr><td>Pozycja</td><td>Wymiary</td><td class="right">Powierzchnia / ilość</td></tr></thead>
           <tbody>${rows}${accRows}</tbody>
         </table>
-        <div class="banner">Dokument dla produkcji — bez cen. Wymiary wg zaakceptowanej oferty.</div>
+        <div class="banner">Dokument dla produkcji. Wymiary wg zaakceptowanej oferty.</div>
         <div class="sign"><span>Wykonano: ...................................</span><span>Data: ......................</span></div>
       </body></html>`;
 }
