@@ -66,6 +66,7 @@ create table public.quotes (
   client_id    uuid references public.clients(id) on delete set null,
   offer_no     text,
   company_name text,
+  material     text,                              -- materiał osłon (np. MDF 18 mm, lakier RAL 7035)
   price_per_m2 numeric(12,2),
   currency     text not null default 'PLN',
   vat_rate     numeric(5,2) not null default 23,   -- stawka VAT w procentach (netto → brutto)

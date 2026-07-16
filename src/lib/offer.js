@@ -4,7 +4,7 @@ import { COMPANY_NAME } from "../config.js";
 // Treść oferty jako zwykły tekst do maila (ta sama w kalkulatorze i w bazie kalkulacji).
 // `meta` = { offerNo, unit }
 export function buildOfferEmailBody(result, meta) {
-  const { offerNo = "", unit = "PLN" } = meta || {};
+  const { offerNo = "", unit = "PLN", material = "" } = meta || {};
   const rows = result.items.map((it) => {
     const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
     return `• ${it.label || "Pozycja"} — ${dims} — ${fmt(it.area)} m² — ${fmt(it.cost)} ${unit}`;
@@ -13,6 +13,7 @@ export function buildOfferEmailBody(result, meta) {
     "Dzień dobry,",
     "",
     `w załączeniu oferta na osłony grzejnikowe (nr ${offerNo}).`,
+    ...(material ? ["", `Materiał: ${material}`] : []),
     "",
     ...rows,
     "",
@@ -35,7 +36,7 @@ const esc = (s) =>
 // Buduje HTML oferty (ten sam dokument w podglądzie i przy druku do PDF).
 // `result` = { items, warnings, totalArea, totalCost, p } ; `meta` = { offerNo, company, client, unit }
 export function buildOfferHTML(result, meta) {
-  const { offerNo = "", company = "", client = "", unit = "PLN" } = meta || {};
+  const { offerNo = "", company = "", client = "", unit = "PLN", material = "" } = meta || {};
 
   const rows = result.items
     .map(
@@ -98,7 +99,8 @@ export function buildOfferHTML(result, meta) {
   )}</span></div>
         <div class="meta-block">
           ${client ? `Dla: <strong>${esc(client)}</strong><br>` : ""}
-          Cena netto materiału: ${fmt(result.p)} ${esc(unit)}/m²
+          ${material ? `Materiał: <strong>${esc(material)}</strong><br>` : ""}
+          Cena netto: ${fmt(result.p)} ${esc(unit)}/m²
         </div>
         <table>
           <thead><tr><td>Pozycja</td><td>Wymiary</td><td>m²</td><td class="right">Netto</td></tr></thead>

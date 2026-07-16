@@ -30,6 +30,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [client, setClient] = useState("");
+  const [material, setMaterial] = useState("");
   const [offerNo, setOfferNo] = useState(() => "OF/" + new Date().toISOString().slice(0, 10).replace(/-/g, "/"));
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -38,7 +39,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const fileRef = useRef(null);
   const iframeRef = useRef(null);
 
-  const meta = { offerNo, company: COMPANY_NAME, client, unit };
+  const meta = { offerNo, company: COMPANY_NAME, client, unit, material };
 
   // Wczytanie zapisanej wyceny do edycji: wypełnia pola i przelicza wynik z zapisanych wymiarów.
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     setUnit(q.currency || "PLN");
     setOfferNo(q.offer_no || "");
     setClient(q.client_name || "");
+    setMaterial(q.material || "");
     setSurfaceMode(mode);
     if (["23", "8", "5", "0"].includes(String(rate))) {
       setVatRate(String(rate));
@@ -84,6 +86,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     setOrigClientName("");
     setResult(null);
     setClient("");
+    setMaterial("");
     setEmailText("");
     setImage(null);
     setSaved(false);
@@ -131,7 +134,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const sendOffer = (to) => {
     if (!result) return;
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
-    const body = buildOfferEmailBody(result, { offerNo, unit });
+    const body = buildOfferEmailBody(result, { offerNo, unit, material });
     window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -244,6 +247,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         client_id: clientId,
         offer_no: offerNo,
         company_name: COMPANY_NAME,
+        material: material.trim() || null,
         price_per_m2: result.p,
         currency: unit,
         vat_rate: result.vatRate,
@@ -535,6 +539,10 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
                   <input value={offerNo} onChange={(e) => setOfferNo(e.target.value)} style={inp} />
                 </label>
               </div>
+              <label style={{ display: "block", marginTop: 12 }}>
+                <div style={lbl}>Materiał</div>
+                <input value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="np. MDF 18 mm, lakier RAL 7035" style={inp} />
+              </label>
             </div>
           )}
 

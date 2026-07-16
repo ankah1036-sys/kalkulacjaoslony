@@ -55,7 +55,7 @@ export default function Quotes({ onEdit }) {
       // Cena, stawka VAT i ostrzeżenia — odczytaj z quotes:
       const { data: full } = await supabase
         .from("quotes")
-        .select("price_per_m2, vat_rate, warnings")
+        .select("price_per_m2, vat_rate, warnings, material")
         .eq("id", row.id)
         .single();
       const net = Number(row.total_cost) || 0;
@@ -77,9 +77,10 @@ export default function Quotes({ onEdit }) {
         company: COMPANY_NAME,
         client: row.clients?.name || "",
         unit: row.currency,
+        material: full?.material || "",
       });
       setPreviewHTML(html);
-      setPreviewData({ result, offerNo: row.offer_no, client: row.clients?.name || "", unit: row.currency });
+      setPreviewData({ result, offerNo: row.offer_no, client: row.clients?.name || "", unit: row.currency, material: full?.material || "" });
       setShowPreview(true);
     } catch (e) {
       setError("Nie udało się otworzyć oferty. " + toPolish(e, "Spróbuj ponownie."));
@@ -91,9 +92,9 @@ export default function Quotes({ onEdit }) {
   // Otwiera program pocztowy z gotową ofertą (jak w kalkulatorze).
   const sendOffer = (to) => {
     if (!previewData) return;
-    const { result, offerNo, unit } = previewData;
+    const { result, offerNo, unit, material } = previewData;
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
-    const body = buildOfferEmailBody(result, { offerNo, unit });
+    const body = buildOfferEmailBody(result, { offerNo, unit, material });
     window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -125,7 +126,7 @@ export default function Quotes({ onEdit }) {
         .eq("quote_id", row.id);
       const { data: full } = await supabase
         .from("quotes")
-        .select("price_per_m2, vat_rate, currency, surface_mode")
+        .select("price_per_m2, vat_rate, currency, surface_mode, material")
         .eq("id", row.id)
         .single();
       onEdit?.({
@@ -133,6 +134,7 @@ export default function Quotes({ onEdit }) {
         offer_no: row.offer_no,
         client_id: row.client_id,
         client_name: row.clients?.name || "",
+        material: full?.material || "",
         price_per_m2: full?.price_per_m2,
         vat_rate: full?.vat_rate,
         currency: full?.currency || "PLN",
