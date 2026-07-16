@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
 import { accessoryTotals } from "../lib/calc.js";
+import SentDialog from "./SentDialog.jsx";
 import { toPolish } from "../lib/errors.js";
 import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
@@ -19,6 +20,7 @@ export default function Quotes({ onEdit }) {
   const [previewData, setPreviewData] = useState(null); // { result, offerNo, client, unit } — do maila
   const [showPreview, setShowPreview] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [sentTo, setSentTo] = useState(null); // po wysyłce: adres odbiorcy (null = modal zamknięty)
   const iframeRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -105,6 +107,7 @@ export default function Quotes({ onEdit }) {
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
     const body = buildOfferEmailBody(result, { offerNo, unit, material });
     window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setSentTo(to || "");
   };
 
   const previewClientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((previewData?.client || "").trim());
@@ -293,6 +296,8 @@ export default function Quotes({ onEdit }) {
           })}
         </div>
       )}
+
+      <SentDialog open={sentTo !== null} to={sentTo} offerNo={previewData?.offerNo} onClose={() => setSentTo(null)} />
 
       {showPreview && (
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }}>

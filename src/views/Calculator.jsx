@@ -6,6 +6,7 @@ import { parseDimensionsFromText, extractMaterialFromText } from "../lib/parseTe
 import { readTextFromImage } from "../lib/ocr.js";
 import { createOrganization } from "../lib/org.js";
 import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
+import SentDialog from "./SentDialog.jsx";
 import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, fmt } from "../theme.js";
@@ -35,6 +36,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const [accessories, setAccessories] = useState([]);
   const [showAcc, setShowAcc] = useState(false);
   const [accDraft, setAccDraft] = useState([]); // robocza lista w modalu (zatwierdzana „Zapisz")
+  const [sentTo, setSentTo] = useState(null); // po wysyłce: adres odbiorcy (null = modal zamknięty)
   const [offerNo, setOfferNo] = useState(() => "OF/" + new Date().toISOString().slice(0, 10).replace(/-/g, "/"));
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -181,6 +183,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
     const body = buildOfferEmailBody(result, { offerNo, unit, material });
     window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setSentTo(to || "");
   };
 
   const clientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(client.trim());
@@ -714,6 +717,8 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
           )}
         </div>
       )}
+
+      <SentDialog open={sentTo !== null} to={sentTo} offerNo={offerNo} onClose={() => setSentTo(null)} />
 
       {showAcc && (
         <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
