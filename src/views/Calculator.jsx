@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { computeResult } from "../lib/calc.js";
+import { parseDimensionsFromText } from "../lib/parseText.js";
 import { buildOfferHTML } from "../lib/offer.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
@@ -53,6 +54,15 @@ export default function Calculator({ onSaved }) {
     if (!p || p <= 0) return setError("Podaj poprawną cenę materiału za m².");
     if (tab === "text" && !emailText.trim()) return setError("Wklej treść maila z wymiarami.");
     if (tab === "image" && !image) return setError("Wgraj zdjęcie lub rysunek z wymiarami.");
+
+    // Treść maila: odczyt lokalny — bez API, natychmiast i bez kosztów.
+    if (tab === "text") {
+      const parsed = parseDimensionsFromText(emailText);
+      setResult(computeResult(parsed.items, parsed.warnings, p, surfaceMode));
+      return;
+    }
+
+    // Rysunek/zdjęcie: wymaga modelu z wizją (klucz API trzymany po stronie serwera).
     setLoading(true);
 
     const sys =
@@ -86,12 +96,18 @@ export default function Calculator({ onSaved }) {
         }),
       });
       const data = await response.json();
+      if (!response.ok || !data.content) {
+        throw new Error("api");
+      }
       const text = data.content.map((i) => (i.type === "text" ? i.text : "")).join("");
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
       setResult(computeResult(parsed.items || [], parsed.warnings || [], p, surfaceMode));
     } catch (err) {
-      setError("Nie udało się odczytać danych. Spróbuj ponownie lub doprecyzuj wymiary.");
+      setError(
+        "Odczyt ze zdjęcia wymaga klucza API (płatny, ok. 1 grosz za zdjęcie) — nie jest skonfigurowany. " +
+          "Na razie użyj zakładki „Treść maila” — działa bez klucza i za darmo."
+      );
     } finally {
       setLoading(false);
     }
