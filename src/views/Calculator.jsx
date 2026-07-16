@@ -31,6 +31,10 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const [result, setResult] = useState(null);
   const [client, setClient] = useState("");
   const [material, setMaterial] = useState("");
+  // Akcesoria: dodatkowe pozycje wyceny (nóżki, montaż, transport…). Każda: { name, qty, unitNet, vat }.
+  const [accessories, setAccessories] = useState([]);
+  const [showAcc, setShowAcc] = useState(false);
+  const [accDraft, setAccDraft] = useState([]); // robocza lista w modalu (zatwierdzana „Zapisz")
   const [offerNo, setOfferNo] = useState(() => "OF/" + new Date().toISOString().slice(0, 10).replace(/-/g, "/"));
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -40,6 +44,9 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const iframeRef = useRef(null);
 
   const meta = { offerNo, company: COMPANY_NAME, client, unit, material };
+  const accCount = accessories.filter(
+    (a) => (a.name || "").trim() || Number(String(a.qty).replace(",", ".")) > 0 || Number(String(a.unitNet).replace(",", ".")) > 0
+  ).length;
 
   // Wczytanie zapisanej wyceny do edycji: wypełnia pola i przelicza wynik z zapisanych wymiarów.
   useEffect(() => {
@@ -57,6 +64,14 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     setOfferNo(q.offer_no || "");
     setClient(q.client_name || "");
     setMaterial(q.material || "");
+    const accList = Array.isArray(q.accessories) ? q.accessories : [];
+    const accForState = accList.map((a) => ({
+      name: a.name || "",
+      qty: a.qty != null ? String(a.qty) : "",
+      unitNet: a.unitNet != null ? String(a.unitNet) : "",
+      vat: a.vat != null ? String(a.vat) : "",
+    }));
+    setAccessories(accForState);
     setSurfaceMode(mode);
     if (["23", "8", "5", "0"].includes(String(rate))) {
       setVatRate(String(rate));
@@ -72,7 +87,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
       depth_m: it.depth_m,
       note: it.note,
     }));
-    setResult(computeResult(rawItems, [], p, mode, rate));
+    setResult(computeResult(rawItems, [], p, mode, rate, accForState));
     setSaved(false);
     setTab("text");
     onEditLoaded?.(); // wyczyść w rodzicu, żeby nie wczytywać ponownie
@@ -87,6 +102,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     setResult(null);
     setClient("");
     setMaterial("");
+    setAccessories([]);
     setEmailText("");
     setImage(null);
     setSaved(false);
@@ -112,8 +128,18 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const rebuild = (mode, vat) => {
     if (!result) return;
     const base = result.warnings.filter((w) => !w.includes("policzono sam front"));
-    setResult(computeResult(result.items, base, result.p, mode, vat));
+    setResult(computeResult(result.items, base, result.p, mode, vat, accessories));
     setSaved(false);
+  };
+
+  // Zapisz akcesoria z modalu i od razu przelicz sumy (jeśli wynik już istnieje).
+  const applyAccessories = (list) => {
+    setAccessories(list);
+    if (result) {
+      const base = result.warnings.filter((w) => !w.includes("policzono sam front"));
+      setResult(computeResult(result.items, base, result.p, surfaceMode, vatNum(), list));
+      setSaved(false);
+    }
   };
 
   const recompute = (mode) => {
@@ -128,6 +154,25 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     const raw = nextRate === "custom" ? nextCustom : nextRate;
     const v = parseFloat(String(raw).replace(",", "."));
     rebuild(surfaceMode, Number.isFinite(v) && v >= 0 ? v : 0);
+  };
+
+  // --- Akcesoria: obsługa modalu ---
+  const emptyAccRow = () => ({ name: "", qty: "1", unitNet: "", vat: String(vatNum()) });
+  const openAccModal = () => {
+    setAccDraft(accessories.length ? accessories.map((a) => ({ ...a })) : [emptyAccRow()]);
+    setShowAcc(true);
+  };
+  const updateAccRow = (i, field, val) =>
+    setAccDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)));
+  const removeAccRow = (i) => setAccDraft((rows) => rows.filter((_, idx) => idx !== i));
+  const addAccRow = () => setAccDraft((rows) => [...rows, emptyAccRow()]);
+  const saveAccModal = () => {
+    // Zostawiamy tylko wiersze z nazwą albo z podaną ilością/ceną — resztę odrzucamy.
+    const cleaned = accDraft.filter(
+      (a) => (a.name || "").trim() || Number(String(a.qty).replace(",", ".")) > 0 || Number(String(a.unitNet).replace(",", ".")) > 0
+    );
+    applyAccessories(cleaned);
+    setShowAcc(false);
   };
 
   // Otwiera program pocztowy z gotowym adresem, tematem i treścią oferty.
@@ -158,7 +203,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         setMaterial(mat);
         warnings.push(`Materiał odczytany z treści: „${mat}” — sprawdź i popraw, jeśli trzeba.`);
       }
-      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum()));
+      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum(), accessories));
       return;
     }
 
@@ -187,7 +232,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         setMaterial(mat);
         warnings.push(`Materiał odczytany ze zdjęcia: „${mat}” — sprawdź i popraw, jeśli trzeba.`);
       }
-      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum()));
+      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum(), accessories));
     } catch (err) {
       setError("Nie udało się odczytać zdjęcia. " + toPolish(err, "Spróbuj ponownie lub przepisz wymiary ręcznie."));
     } finally {
@@ -264,7 +309,13 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         vat_rate: result.vatRate,
         surface_mode: result.mode,
         total_area: result.totalArea,
-        total_cost: result.totalNet,
+        total_cost: result.coversNet, // netto osłon (bez akcesoriów); akcesoria w osobnej kolumnie
+        accessories: (result.accessories || []).map((a) => ({
+          name: a.name,
+          qty: a.qty,
+          unitNet: a.unitNet,
+          vat: a.vat,
+        })),
         warnings: result.warnings,
       };
 
@@ -382,10 +433,25 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
         )}
       </div>
 
-      <label style={{ display: "block", marginBottom: 20 }}>
+      <label style={{ display: "block", marginBottom: 14 }}>
         <div style={lbl}>Materiał</div>
         <input value={material} onChange={(e) => setMaterial(e.target.value)} placeholder="np. MDF 18 mm, lakier RAL 7035" style={inp} />
       </label>
+
+      <div style={{ marginBottom: 20 }}>
+        <button
+          type="button"
+          onClick={openAccModal}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: accCount > 0 ? C.ink : "#fff", color: accCount > 0 ? C.paper : C.ink }}
+        >
+          + Dodaj akcesoria{accCount > 0 ? ` · ${accCount}` : ""}
+        </button>
+        {accCount > 0 && (
+          <span style={{ marginLeft: 10, fontSize: 12, color: C.steel }}>
+            {accCount === 1 ? "1 pozycja dodatkowa" : `${accCount} pozycje dodatkowe`}
+          </span>
+        )}
+      </div>
 
       <div style={{ marginBottom: 20 }}>
         <div style={lbl}>Co liczymy</div>
@@ -522,6 +588,17 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
                   <div style={{ textAlign: "right", fontWeight: 700 }}>{fmt(it.cost)}</div>
                 </div>
               ))}
+              {(result.accessories || []).map((a, i) => (
+                <div key={"acc" + i} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.7fr 1fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center", background: "#faf7f0" }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {a.name || "Akcesorium"}
+                    <div style={{ fontSize: 10, color: C.steel }}>akcesorium · VAT {fmt(a.vat)}%</div>
+                  </div>
+                  <div style={{ fontSize: 13 }}>{fmt(a.qty)} szt. × {fmt(a.unitNet)}</div>
+                  <div></div>
+                  <div style={{ textAlign: "right", fontWeight: 700 }}>{fmt(a.net)}</div>
+                </div>
+              ))}
               <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.7fr 1fr", padding: "12px 14px", borderTop: `1px solid ${C.line}`, fontSize: 14 }}>
                 <div style={{ fontWeight: 600 }}>Razem netto</div>
                 <div></div>
@@ -529,7 +606,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
                 <div style={{ textAlign: "right", fontWeight: 700 }}>{fmt(result.totalNet)} {unit}</div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", borderTop: `1px solid ${C.line}`, fontSize: 14, color: C.steel }}>
-                <span>VAT {fmt(result.vatRate)}%</span>
+                <span>{result.singleVatRate != null ? `VAT ${fmt(result.singleVatRate)}%` : "VAT (różne stawki)"}</span>
                 <span style={{ fontWeight: 700 }}>{fmt(result.vatAmount)} {unit}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "14px", background: C.ink, color: C.paper, fontSize: 16, fontWeight: 800 }}>
@@ -635,6 +712,46 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {showAcc && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={() => setShowAcc(false)} style={{ position: "absolute", inset: 0, background: "rgba(28,30,34,0.5)" }} />
+          <div style={{ position: "relative", width: "min(660px, 96vw)", maxHeight: "90vh", overflow: "auto", background: C.paper, border: `2px solid ${C.ink}`, boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: `2px solid ${C.ink}` }}>
+              <div style={{ fontSize: 15, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 }}>Akcesoria</div>
+              <button onClick={() => setShowAcc(false)} style={{ border: "none", background: "transparent", fontSize: 24, cursor: "pointer", color: C.steel, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: 18 }}>
+              <div style={{ fontSize: 12, color: C.steel, marginBottom: 14, lineHeight: 1.5 }}>
+                Dodatkowe pozycje doliczane do wyceny (np. nóżki, zawiasy, montaż, transport). Podaj ilość, cenę netto za sztukę i stawkę VAT.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 1fr 0.7fr 36px", gap: 8, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel, marginBottom: 6 }}>
+                <div>Pozycja</div>
+                <div>Ilość</div>
+                <div>Cena netto</div>
+                <div>VAT %</div>
+                <div></div>
+              </div>
+              {accDraft.map((a, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 1fr 0.7fr 36px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                  <input value={a.name} onChange={(e) => updateAccRow(i, "name", e.target.value)} placeholder="np. Nóżki meblowe" style={{ ...inp, padding: "8px 10px" }} />
+                  <input value={a.qty} onChange={(e) => updateAccRow(i, "qty", e.target.value)} inputMode="decimal" placeholder="1" style={{ ...inp, padding: "8px 10px" }} />
+                  <input value={a.unitNet} onChange={(e) => updateAccRow(i, "unitNet", e.target.value)} inputMode="decimal" placeholder="0,00" style={{ ...inp, padding: "8px 10px" }} />
+                  <input value={a.vat} onChange={(e) => updateAccRow(i, "vat", e.target.value)} inputMode="decimal" placeholder="23" style={{ ...inp, padding: "8px 10px" }} />
+                  <button onClick={() => removeAccRow(i)} title="Usuń pozycję" style={{ border: `1px solid ${C.line}`, background: "#fff", color: C.red, fontSize: 18, fontWeight: 700, cursor: "pointer", height: 36 }}>×</button>
+                </div>
+              ))}
+              <button onClick={addAccRow} style={{ marginTop: 4, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px dashed ${C.ink}`, background: "transparent", color: C.ink }}>
+                + Dodaj wiersz
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 10, padding: "14px 18px", borderTop: `1px solid ${C.line}` }}>
+              <button onClick={() => setShowAcc(false)} style={{ flex: "0 0 auto", padding: "11px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Anuluj</button>
+              <button onClick={saveAccModal} style={{ flex: 1, padding: "11px 0", fontSize: 14, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, cursor: "pointer", border: "none", background: C.ink, color: "#fff" }}>Zapisz akcesoria</button>
+            </div>
+          </div>
         </div>
       )}
 

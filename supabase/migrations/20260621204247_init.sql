@@ -67,6 +67,7 @@ create table public.quotes (
   offer_no     text,
   company_name text,
   material     text,                              -- materiał osłon (np. MDF 18 mm, lakier RAL 7035)
+  accessories  jsonb not null default '[]'::jsonb, -- dodatkowe pozycje: [{name, qty, unitNet, vat}]
   price_per_m2 numeric(12,2),
   currency     text not null default 'PLN',
   vat_rate     numeric(5,2) not null default 23,   -- stawka VAT w procentach (netto → brutto)

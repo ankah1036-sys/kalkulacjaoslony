@@ -9,6 +9,12 @@ export function buildOfferEmailBody(result, meta) {
     const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
     return `• ${it.label || "Pozycja"} — ${dims} — ${fmt(it.area)} m² — ${fmt(it.cost)} ${unit}`;
   });
+  const accessories = result.accessories || [];
+  const accRows = accessories.map(
+    (a) => `• ${a.name || "Akcesorium"} — ${fmt(a.qty)} szt. × ${fmt(a.unitNet)} ${unit} — ${fmt(a.net)} ${unit} (VAT ${fmt(a.vat)}%)`
+  );
+  // Etykieta VAT: jeden procent, gdy cała oferta ma tę samą stawkę; inaczej „różne stawki".
+  const vatLabel = result.singleVatRate != null ? `VAT ${fmt(result.singleVatRate)}%` : "VAT (różne stawki)";
   return [
     "Dzień dobry,",
     "",
@@ -16,9 +22,10 @@ export function buildOfferEmailBody(result, meta) {
     ...(material ? ["", `Materiał: ${material}`] : []),
     "",
     ...rows,
+    ...(accRows.length ? ["", "Akcesoria:", ...accRows] : []),
     "",
     `Razem netto: ${fmt(result.totalNet)} ${unit}`,
-    `VAT ${fmt(result.vatRate)}%: ${fmt(result.vatAmount)} ${unit}`,
+    `${vatLabel}: ${fmt(result.vatAmount)} ${unit}`,
     `Do zapłaty (brutto): ${fmt(result.totalGross)} ${unit}`,
     "",
     "Oferta ważna 14 dni. Wymiary do potwierdzenia po pomiarze z natury.",
@@ -53,6 +60,21 @@ export function buildOfferHTML(result, meta) {
       </tr>`
     )
     .join("");
+
+  // Akcesoria — dodatkowe pozycje (ilość × cena netto, własny VAT).
+  const accRows = (result.accessories || [])
+    .map(
+      (a) => `
+      <tr>
+        <td class="pos">${esc(a.name || "Akcesorium")}<div class="basis">akcesorium · VAT ${fmt(a.vat)}%</div></td>
+        <td>${fmt(a.qty)} szt. × ${fmt(a.unitNet)} ${esc(unit)}</td>
+        <td></td>
+        <td class="right b">${fmt(a.net)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const vatLabel = result.singleVatRate != null ? `VAT ${fmt(result.singleVatRate)}%` : "VAT (różne stawki)";
 
   const warnings =
     result.warnings && result.warnings.length > 0
@@ -104,12 +126,12 @@ export function buildOfferHTML(result, meta) {
         </div>
         <table>
           <thead><tr><td>Pozycja</td><td>Wymiary</td><td>m²</td><td class="right">Netto</td></tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows}${accRows}</tbody>
           <tfoot>
             <tr class="sum-net"><td>Razem netto</td><td></td><td>${fmt(result.totalArea)} m²</td><td class="right">${fmt(
     result.totalNet
   )} ${esc(unit)}</td></tr>
-            <tr class="sum-vat"><td colspan="3">VAT ${fmt(result.vatRate)}%</td><td class="right">${fmt(
+            <tr class="sum-vat"><td colspan="3">${vatLabel}</td><td class="right">${fmt(
     result.vatAmount
   )} ${esc(unit)}</td></tr>
             <tr class="sum-gross"><td colspan="3">Do zapłaty (brutto)</td><td class="right">${fmt(

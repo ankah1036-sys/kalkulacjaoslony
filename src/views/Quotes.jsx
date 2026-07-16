@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
+import { accessoryTotals } from "../lib/calc.js";
 import { toPolish } from "../lib/errors.js";
 import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
@@ -26,7 +27,7 @@ export default function Quotes({ onEdit }) {
     setError("");
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, offer_no, company_name, client_id, currency, vat_rate, total_area, total_cost, status, created_at, created_by_email, clients ( name )")
+      .select("id, offer_no, company_name, client_id, currency, vat_rate, total_area, total_cost, status, created_at, created_by_email, accessories, clients ( name )")
       .eq("org_id", org.id)
       .order("created_at", { ascending: false });
     if (error) setError("Nie udało się wczytać wycen. " + toPolish(error, "Spróbuj odświeżyć stronę."));
@@ -56,21 +57,28 @@ export default function Quotes({ onEdit }) {
       // Cena, stawka VAT i ostrzeżenia — odczytaj z quotes:
       const { data: full } = await supabase
         .from("quotes")
-        .select("price_per_m2, vat_rate, warnings, material")
+        .select("price_per_m2, vat_rate, warnings, material, accessories")
         .eq("id", row.id)
         .single();
-      const net = Number(row.total_cost) || 0;
+      const coversNet = Number(row.total_cost) || 0;
       const rate = Number(full?.vat_rate) || 0;
-      const vatAmount = net * (rate / 100);
+      const accT = accessoryTotals(full?.accessories, rate);
+      const totalNet = coversNet + accT.net;
+      const vatAmount = coversNet * (rate / 100) + accT.vat;
+      const rates = new Set([...(coversNet > 0 ? [rate] : []), ...accT.items.map((a) => a.vat)]);
+      const singleVatRate = rates.size <= 1 ? (rates.size === 1 ? [...rates][0] : rate) : null;
       const result = {
         items: items || [],
+        accessories: accT.items,
         warnings: full?.warnings || [],
         totalArea: row.total_area,
-        totalCost: net,
-        totalNet: net,
+        coversNet,
+        totalCost: coversNet,
+        totalNet,
         vatRate: rate,
+        singleVatRate,
         vatAmount,
-        totalGross: net + vatAmount,
+        totalGross: totalNet + vatAmount,
         p: full?.price_per_m2 || 0,
       };
       const html = buildOfferHTML(result, {
@@ -127,7 +135,7 @@ export default function Quotes({ onEdit }) {
         .eq("quote_id", row.id);
       const { data: full } = await supabase
         .from("quotes")
-        .select("price_per_m2, vat_rate, currency, surface_mode, material")
+        .select("price_per_m2, vat_rate, currency, surface_mode, material, accessories")
         .eq("id", row.id)
         .single();
       onEdit?.({
@@ -136,6 +144,7 @@ export default function Quotes({ onEdit }) {
         client_id: row.client_id,
         client_name: row.clients?.name || "",
         material: full?.material || "",
+        accessories: Array.isArray(full?.accessories) ? full.accessories : [],
         price_per_m2: full?.price_per_m2,
         vat_rate: full?.vat_rate,
         currency: full?.currency || "PLN",
@@ -210,7 +219,13 @@ export default function Quotes({ onEdit }) {
             <div style={{ textAlign: "right" }}>Suma (brutto)</div>
             <div style={{ textAlign: "right" }}>Akcje</div>
           </div>
-          {filtered.map((r) => (
+          {filtered.map((r) => {
+            const rate = Number(r.vat_rate) || 0;
+            const coversNet = Number(r.total_cost) || 0;
+            const accT = accessoryTotals(r.accessories, rate);
+            const netto = coversNet + accT.net;
+            const brutto = coversNet * (1 + rate / 100) + accT.gross;
+            return (
             <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 1.15fr 1.2fr 0.95fr 0.5fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center" }}>
               <div>
                 <div style={{ fontWeight: 600 }}>{r.offer_no || "—"}</div>
@@ -246,8 +261,11 @@ export default function Quotes({ onEdit }) {
                 </select>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 700 }}>{fmt(Number(r.total_cost) * (1 + (Number(r.vat_rate) || 0) / 100))} {r.currency}</div>
-                <div style={{ fontSize: 11, color: C.steel }}>brutto · netto {fmt(r.total_cost)}</div>
+                <div style={{ fontWeight: 700 }}>{fmt(brutto)} {r.currency}</div>
+                <div style={{ fontSize: 11, color: C.steel }}>
+                  brutto · netto {fmt(netto)}
+                  {accT.items.length > 0 && <span> · z akcesoriami</span>}
+                </div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", position: "relative" }}>
                 <button
@@ -271,7 +289,8 @@ export default function Quotes({ onEdit }) {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
