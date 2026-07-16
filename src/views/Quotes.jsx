@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
-import { printOffer } from "../lib/offer.js";
+import { buildOfferHTML } from "../lib/offer.js";
 import { toPolish } from "../lib/errors.js";
 import { COMPANY_NAME } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
@@ -13,6 +13,10 @@ export default function Quotes({ onEdit }) {
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [previewHTML, setPreviewHTML] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const iframeRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!org) return;
@@ -38,9 +42,10 @@ export default function Quotes({ onEdit }) {
     return hay.includes(q.toLowerCase());
   });
 
-  // Pobiera pełną wycenę (z pozycjami) i otwiera ofertę do druku/PDF.
+  // Pobiera pełną wycenę (z pozycjami) i pokazuje ofertę w podglądzie (do zapisu PDF).
   const openPdf = async (row) => {
     setBusyId(row.id);
+    setError("");
     try {
       const { data: items } = await supabase
         .from("quote_items")
@@ -66,16 +71,34 @@ export default function Quotes({ onEdit }) {
         totalGross: net + vatAmount,
         p: full?.price_per_m2 || 0,
       };
-      printOffer(result, {
+      const html = buildOfferHTML(result, {
         offerNo: row.offer_no,
-        company: row.company_name,
+        company: COMPANY_NAME,
         client: row.clients?.name || "",
         unit: row.currency,
       });
+      setPreviewHTML(html);
+      setShowPreview(true);
     } catch (e) {
       setError("Nie udało się otworzyć oferty. " + toPolish(e, "Spróbuj ponownie."));
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // Druk/zapis PDF z podglądu (użytkownik wybiera „Zapisz jako PDF" w oknie druku).
+  const printPreview = () => {
+    setPdfLoading(true);
+    try {
+      const ifr = iframeRef.current;
+      if (ifr && ifr.contentWindow) {
+        ifr.contentWindow.focus();
+        ifr.contentWindow.print();
+      }
+    } catch {
+      setError("Nie udało się otworzyć okna druku. Spróbuj ponownie.");
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -184,6 +207,28 @@ export default function Quotes({ onEdit }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showPreview && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
+          <div onClick={() => setShowPreview(false)} style={{ position: "absolute", inset: 0, background: "rgba(28,30,34,0.45)" }} />
+          <div style={{ position: "relative", width: "min(620px, 94vw)", height: "100%", background: C.paper, boxShadow: "-8px 0 40px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `2px solid ${C.ink}`, background: C.paper }}>
+              <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 }}>Podgląd oferty</div>
+              <button onClick={() => setShowPreview(false)} style={{ border: "none", background: "transparent", fontSize: 22, cursor: "pointer", color: C.steel, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: 16, background: "#9b958a" }}>
+              <iframe ref={iframeRef} title="Podgląd oferty" srcDoc={previewHTML} style={{ width: "100%", minHeight: 760, border: "none", background: "#fff", boxShadow: "0 4px 18px rgba(0,0,0,0.25)" }} />
+            </div>
+            <div style={{ padding: "14px 18px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10, background: C.paper }}>
+              <button onClick={() => setShowPreview(false)} style={{ flex: "0 0 auto", padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Zamknij</button>
+              <button onClick={printPreview} disabled={pdfLoading} style={{ flex: 1, padding: "12px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", cursor: pdfLoading ? "wait" : "pointer", border: "none", background: C.green, color: "#fff" }}>{pdfLoading ? "Otwieram…" : "↓ Zapisz / drukuj PDF"}</button>
+            </div>
+            <div style={{ padding: "0 18px 12px", fontSize: 11, color: C.steel, background: C.paper }}>
+              W oknie druku wybierz drukarkę „Zapisz jako PDF", aby pobrać plik dla klienta.
+            </div>
+          </div>
         </div>
       )}
     </div>
