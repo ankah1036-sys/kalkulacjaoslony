@@ -2,9 +2,11 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { printOffer } from "../lib/offer.js";
+import { toPolish } from "../lib/errors.js";
+import { COMPANY_NAME } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
-export default function Quotes() {
+export default function Quotes({ onEdit }) {
   const { org } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,10 +20,10 @@ export default function Quotes() {
     setError("");
     const { data, error } = await supabase
       .from("quotes")
-      .select("id, offer_no, company_name, client_id, currency, total_area, total_cost, status, created_at, clients ( name )")
+      .select("id, offer_no, company_name, client_id, currency, vat_rate, total_area, total_cost, status, created_at, created_by_email, clients ( name )")
       .eq("org_id", org.id)
       .order("created_at", { ascending: false });
-    if (error) setError("Nie udało się wczytać wycen: " + error.message);
+    if (error) setError("Nie udało się wczytać wycen. " + toPolish(error, "Spróbuj odświeżyć stronę."));
     else setRows(data || []);
     setLoading(false);
   }, [org]);
@@ -44,17 +46,26 @@ export default function Quotes() {
         .from("quote_items")
         .select("*")
         .eq("quote_id", row.id);
+      // Cena, stawka VAT i ostrzeżenia — odczytaj z quotes:
+      const { data: full } = await supabase
+        .from("quotes")
+        .select("price_per_m2, vat_rate, warnings")
+        .eq("id", row.id)
+        .single();
+      const net = Number(row.total_cost) || 0;
+      const rate = Number(full?.vat_rate) || 0;
+      const vatAmount = net * (rate / 100);
       const result = {
         items: items || [],
-        warnings: [],
+        warnings: full?.warnings || [],
         totalArea: row.total_area,
-        totalCost: row.total_cost,
-        p: 0,
+        totalCost: net,
+        totalNet: net,
+        vatRate: rate,
+        vatAmount,
+        totalGross: net + vatAmount,
+        p: full?.price_per_m2 || 0,
       };
-      // p (cena) potrzebne do nagłówka — odczytaj z quotes:
-      const { data: full } = await supabase.from("quotes").select("price_per_m2, warnings").eq("id", row.id).single();
-      result.p = full?.price_per_m2 || 0;
-      result.warnings = full?.warnings || [];
       printOffer(result, {
         offerNo: row.offer_no,
         company: row.company_name,
@@ -62,7 +73,38 @@ export default function Quotes() {
         unit: row.currency,
       });
     } catch (e) {
-      setError("Nie udało się otworzyć oferty: " + (e.message || ""));
+      setError("Nie udało się otworzyć oferty. " + toPolish(e, "Spróbuj ponownie."));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Wczytuje wycenę (z pozycjami) do kalkulatora, żeby ją edytować.
+  const edit = async (row) => {
+    setBusyId(row.id);
+    try {
+      const { data: items } = await supabase
+        .from("quote_items")
+        .select("label, width_m, height_m, depth_m, note")
+        .eq("quote_id", row.id);
+      const { data: full } = await supabase
+        .from("quotes")
+        .select("price_per_m2, vat_rate, currency, surface_mode")
+        .eq("id", row.id)
+        .single();
+      onEdit?.({
+        id: row.id,
+        offer_no: row.offer_no,
+        client_id: row.client_id,
+        client_name: row.clients?.name || "",
+        price_per_m2: full?.price_per_m2,
+        vat_rate: full?.vat_rate,
+        currency: full?.currency || "PLN",
+        surface_mode: full?.surface_mode || "auto",
+        items: items || [],
+      });
+    } catch (e) {
+      setError("Nie udało się wczytać wyceny do edycji. " + toPolish(e, "Spróbuj ponownie."));
     } finally {
       setBusyId(null);
     }
@@ -73,7 +115,7 @@ export default function Quotes() {
     setBusyId(row.id);
     const { error } = await supabase.from("quotes").delete().eq("id", row.id);
     setBusyId(null);
-    if (error) setError("Nie udało się usunąć: " + error.message);
+    if (error) setError("Nie udało się usunąć wyceny. " + toPolish(error, "Spróbuj ponownie."));
     else setRows((r) => r.filter((x) => x.id !== row.id));
   };
 
@@ -83,7 +125,7 @@ export default function Quotes() {
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <header style={{ borderBottom: `2px solid ${C.ink}`, paddingBottom: 16, marginBottom: 22 }}>
         <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: C.brass, fontWeight: 700 }}>
-          Historia · {org?.name}
+          Historia · {COMPANY_NAME}
         </div>
         <h1 style={{ fontSize: 32, margin: "6px 0 0", fontWeight: 800, letterSpacing: -0.5 }}>Baza kalkulacji</h1>
       </header>
@@ -107,7 +149,7 @@ export default function Quotes() {
             <div>Nr / data</div>
             <div>Klient</div>
             <div>Status</div>
-            <div style={{ textAlign: "right" }}>Suma</div>
+            <div style={{ textAlign: "right" }}>Suma (brutto)</div>
             <div style={{ textAlign: "right" }}>Akcje</div>
           </div>
           {filtered.map((r) => (
@@ -115,6 +157,9 @@ export default function Quotes() {
               <div>
                 <div style={{ fontWeight: 600 }}>{r.offer_no || "—"}</div>
                 <div style={{ fontSize: 11, color: C.steel }}>{new Date(r.created_at).toLocaleDateString("pl-PL")}</div>
+                {r.created_by_email && (
+                  <div style={{ fontSize: 10, color: C.line }}>zapisał: {r.created_by_email}</div>
+                )}
               </div>
               <div style={{ fontSize: 13 }}>{r.clients?.name || <span style={{ color: C.line }}>—</span>}</div>
               <div style={{ fontSize: 12 }}>
@@ -122,10 +167,14 @@ export default function Quotes() {
                   {statusLabel[r.status] || r.status}
                 </span>
               </div>
-              <div style={{ textAlign: "right", fontWeight: 700 }}>
-                {fmt(r.total_cost)} {r.currency}
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 700 }}>{fmt(Number(r.total_cost) * (1 + (Number(r.vat_rate) || 0) / 100))} {r.currency}</div>
+                <div style={{ fontSize: 11, color: C.steel }}>brutto · netto {fmt(r.total_cost)}</div>
               </div>
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button onClick={() => edit(r)} disabled={busyId === r.id} style={miniBtn(C.steel)}>
+                  Edytuj
+                </button>
                 <button onClick={() => openPdf(r)} disabled={busyId === r.id} style={miniBtn(C.green)}>
                   {busyId === r.id ? "…" : "PDF"}
                 </button>

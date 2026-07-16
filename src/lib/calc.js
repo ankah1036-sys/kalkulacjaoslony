@@ -1,6 +1,9 @@
 // Logika liczenia powierzchni i kosztu obudów kaloryferów.
 // "full" = front + 2 boki + góra (obudowa nakładana, bez tyłu i spodu).
-export function computeResult(rawItems, baseWarnings, p, mode) {
+//
+// Cena `p` (za m²) jest ceną NETTO. `vatRate` to stawka VAT w procentach (np. 23).
+// Zwracamy netto, kwotę VAT i brutto — na ofercie pokazujemy wszystkie trzy.
+export function computeResult(rawItems, baseWarnings, p, mode, vatRate = 23) {
   const warnings = [...baseWarnings];
   const items = rawItems.map((it) => {
     const w = it.width_m || 0,
@@ -24,6 +27,10 @@ export function computeResult(rawItems, baseWarnings, p, mode) {
     return { ...it, depth_m: d || null, area, basis, cost: area * p };
   });
   const totalArea = items.reduce((s, i) => s + i.area, 0);
-  const totalCost = items.reduce((s, i) => s + i.cost, 0);
-  return { items, warnings, totalArea, totalCost, p, mode };
+  const totalNet = items.reduce((s, i) => s + i.cost, 0);
+  const rate = Number.isFinite(vatRate) ? vatRate : 0;
+  const vatAmount = totalNet * (rate / 100);
+  const totalGross = totalNet + vatAmount;
+  // totalCost = netto (zgodność z tym, co zapisujemy w bazie jako total_cost).
+  return { items, warnings, totalArea, totalCost: totalNet, totalNet, vatRate: rate, vatAmount, totalGross, p, mode };
 }

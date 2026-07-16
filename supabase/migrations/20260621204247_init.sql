@@ -68,6 +68,7 @@ create table public.quotes (
   company_name text,
   price_per_m2 numeric(12,2),
   currency     text not null default 'PLN',
+  vat_rate     numeric(5,2) not null default 23,   -- stawka VAT w procentach (netto → brutto)
   surface_mode text not null default 'auto' check (surface_mode in ('auto','front','full')),
   total_area   numeric(14,4),
   total_cost   numeric(14,2),

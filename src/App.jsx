@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.jsx";
 import AuthScreen from "./views/AuthScreen.jsx";
-import Onboarding from "./views/Onboarding.jsx";
 import Calculator from "./views/Calculator.jsx";
 import Quotes from "./views/Quotes.jsx";
+import { COMPANY_NAME } from "./config.js";
 import { C } from "./theme.js";
 
 export default function App() {
@@ -18,6 +18,21 @@ function Shell() {
   const { configured, loading, session, org, user, signOut } = useAuth();
   const [view, setView] = useState("calc"); // calc | quotes
   const [refreshKey, setRefreshKey] = useState(0);
+  const [calcKey, setCalcKey] = useState(0); // bump = świeży kalkulator (remount)
+  const [editingQuote, setEditingQuote] = useState(null);
+
+  // „Nowa wycena": czysty kalkulator (bez trybu edycji).
+  const goNewQuote = () => {
+    setEditingQuote(null);
+    setCalcKey((k) => k + 1);
+    setView("calc");
+  };
+  // „Edytuj" z bazy: wczytaj wycenę do kalkulatora.
+  const goEditQuote = (quote) => {
+    setEditingQuote(quote);
+    setCalcKey((k) => k + 1);
+    setView("calc");
+  };
 
   const page = (children) => (
     <div style={{ minHeight: "100vh", background: C.paper, color: C.ink, fontFamily: "'Helvetica Neue', Arial, sans-serif", padding: "32px 20px" }}>
@@ -28,7 +43,8 @@ function Shell() {
   if (!configured) return <ConfigNotice />;
   if (loading) return page(<div style={{ maxWidth: 720, margin: "60px auto", color: C.steel }}>Wczytuję…</div>);
   if (!session) return <AuthScreen />;
-  if (!org) return <Onboarding />;
+  // Bez bramki „Załóż firmę" — po zalogowaniu od razu kalkulator.
+  // O nazwę firmy pytamy dopiero przy pierwszym zapisie wyceny.
 
   return page(
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
@@ -37,7 +53,7 @@ function Shell() {
           {[["calc", "Nowa wycena"], ["quotes", "Baza kalkulacji"]].map(([k, label], idx) => (
             <button
               key={k}
-              onClick={() => setView(k)}
+              onClick={() => (k === "calc" ? goNewQuote() : setView("quotes"))}
               style={{
                 padding: "9px 16px",
                 fontSize: 13,
@@ -55,8 +71,7 @@ function Shell() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: C.steel }}>
           <span>
-            <strong style={{ color: C.ink }}>{org.name}</strong> · {user.email}
-            {org.role === "admin" && <span style={{ marginLeft: 6, color: C.brass, fontWeight: 700 }}>admin</span>}
+            <strong style={{ color: C.ink }}>{COMPANY_NAME}</strong> · {user.email}
           </span>
           <button onClick={signOut} style={{ border: `1px solid ${C.line}`, background: "#fff", padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: C.steel }}>
             Wyloguj
@@ -65,9 +80,14 @@ function Shell() {
       </nav>
 
       {view === "calc" ? (
-        <Calculator onSaved={() => setRefreshKey((k) => k + 1)} />
+        <Calculator
+          key={calcKey}
+          editingQuote={editingQuote}
+          onEditLoaded={() => setEditingQuote(null)}
+          onSaved={() => setRefreshKey((k) => k + 1)}
+        />
       ) : (
-        <Quotes key={refreshKey} />
+        <Quotes key={refreshKey} onEdit={goEditQuote} />
       )}
     </div>
   );

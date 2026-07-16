@@ -52,7 +52,10 @@ export function buildOfferHTML(result, meta) {
         .basis { font-size: 8px; color: ${C.steel}; margin-top: 1px; }
         .right { text-align: right; }
         .b { font-weight: 700; }
-        tfoot td { background: ${C.ink}; color: ${C.paper}; font-weight: 800; font-size: 14px; padding: 11px 8px; }
+        tfoot td { padding: 9px 8px; }
+        .sum-net td { border-top: 2px solid ${C.ink}; font-weight: 600; }
+        .sum-vat td { color: ${C.steel}; }
+        .sum-gross td { background: ${C.ink}; color: ${C.paper}; font-weight: 800; font-size: 14px; padding: 11px 8px; }
         .warn { margin-top: 16px; padding: 10px 12px; border-left: 4px solid ${C.brass}; background: #faf7f0; font-size: 11px; color: ${C.steel}; }
         .warn ul { margin: 5px 0 0 16px; }
         .foot { margin-top: 28px; font-size: 9px; color: ${C.steel}; }
@@ -68,21 +71,29 @@ export function buildOfferHTML(result, meta) {
   )}</span></div>
         <div class="meta-block">
           ${client ? `Dla: <strong>${esc(client)}</strong><br>` : ""}
-          Cena materiału: ${fmt(result.p)} ${esc(unit)}/m²
+          Cena netto materiału: ${fmt(result.p)} ${esc(unit)}/m²
         </div>
         <table>
-          <thead><tr><td>Pozycja</td><td>Wymiary</td><td>m²</td><td class="right">Koszt</td></tr></thead>
+          <thead><tr><td>Pozycja</td><td>Wymiary</td><td>m²</td><td class="right">Netto</td></tr></thead>
           <tbody>${rows}</tbody>
-          <tfoot><tr><td>RAZEM</td><td></td><td>${fmt(result.totalArea)} m²</td><td class="right">${fmt(
-    result.totalCost
-  )} ${esc(unit)}</td></tr></tfoot>
+          <tfoot>
+            <tr class="sum-net"><td>Razem netto</td><td></td><td>${fmt(result.totalArea)} m²</td><td class="right">${fmt(
+    result.totalNet
+  )} ${esc(unit)}</td></tr>
+            <tr class="sum-vat"><td colspan="3">VAT ${fmt(result.vatRate)}%</td><td class="right">${fmt(
+    result.vatAmount
+  )} ${esc(unit)}</td></tr>
+            <tr class="sum-gross"><td colspan="3">Do zapłaty (brutto)</td><td class="right">${fmt(
+    result.totalGross
+  )} ${esc(unit)}</td></tr>
+          </tfoot>
         </table>
         ${warnings}
         <div class="foot">${
           result.items.some((i) => i.basis && i.basis.startsWith("pełna"))
             ? "Wycena obejmuje powierzchnię obudowy (front, boki i górę)."
             : "Wycena obejmuje powierzchnię frontu obudowy."
-        } Ceny netto, oferta ważna 14 dni.</div>
+        } Oferta ważna 14 dni.</div>
         <div class="sign"><span>Akceptacja klienta: ...................................</span><span>Data: ......................</span></div>
       </body></html>`;
 }

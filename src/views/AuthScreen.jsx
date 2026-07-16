@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase.js";
+import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, btnPrimary } from "../theme.js";
 
 export default function AuthScreen() {
@@ -15,8 +16,16 @@ export default function AuthScreen() {
     e.preventDefault();
     setError("");
     setInfo("");
-    if (!email.trim() || !password) {
-      setError("Podaj e-mail i hasło.");
+    if (!email.trim()) {
+      setError("Podaj adres e-mail.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setError("To nie wygląda na poprawny adres e-mail. Sprawdź, czy nie ma literówki.");
+      return;
+    }
+    if (!password) {
+      setError("Podaj hasło.");
       return;
     }
     if (mode === "register" && password.length < 6) {
@@ -42,7 +51,7 @@ export default function AuthScreen() {
         }
       }
     } catch (err) {
-      setError(translate(err.message));
+      setError(toPolish(err));
     } finally {
       setBusy(false);
     }
@@ -71,7 +80,8 @@ export default function AuthScreen() {
           {mode === "login" ? "Wpisz dane, aby wejść do swoich wycen." : "Utwórz konto, by zapisywać wyceny."}
         </p>
 
-        <form onSubmit={submit} style={{ background: "#fff", border: `1px solid ${C.line}`, padding: 22 }}>
+        {/* noValidate — sprawdzamy sami, żeby komunikaty były po polsku, a nie w języku przeglądarki. */}
+        <form onSubmit={submit} noValidate style={{ background: "#fff", border: `1px solid ${C.line}`, padding: 22 }}>
           {mode === "register" && (
             <label style={{ display: "block", marginBottom: 14 }}>
               <div style={lbl}>Imię i nazwisko</div>
@@ -125,12 +135,4 @@ export default function AuthScreen() {
       </div>
     </div>
   );
-}
-
-function translate(msg) {
-  const m = (msg || "").toLowerCase();
-  if (m.includes("invalid login")) return "Nieprawidłowy e-mail lub hasło.";
-  if (m.includes("already registered")) return "Ten e-mail jest już zarejestrowany. Zaloguj się.";
-  if (m.includes("email not confirmed")) return "E-mail nie został potwierdzony. Sprawdź skrzynkę.";
-  return msg || "Coś poszło nie tak. Spróbuj ponownie.";
 }

@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, btnPrimary } from "../theme.js";
 
 export default function Onboarding() {
   const { user, refreshOrg, signOut } = useAuth();
   const [name, setName] = useState("");
-  const [price, setPrice] = useState("180");
-  const [currency, setCurrency] = useState("PLN");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -23,11 +22,8 @@ export default function Onboarding() {
       // 1) Utwórz firmę.
       const { data: org, error: orgErr } = await supabase
         .from("organizations")
-        .insert({
-          name: name.trim(),
-          default_price: parseFloat(String(price).replace(",", ".")) || null,
-          default_currency: currency.trim() || "PLN",
-        })
+        // Bez domyślnej ceny — zależy od materiału, więc podaje się ją przy każdej wycenie.
+        .insert({ name: name.trim() })
         .select()
         .single();
       if (orgErr) throw orgErr;
@@ -40,7 +36,7 @@ export default function Onboarding() {
 
       await refreshOrg();
     } catch (err) {
-      setError(err.message || "Nie udało się utworzyć firmy.");
+      setError(toPolish(err, "Nie udało się utworzyć firmy. Spróbuj ponownie."));
     } finally {
       setBusy(false);
     }
@@ -68,20 +64,10 @@ export default function Onboarding() {
         </p>
 
         <form onSubmit={create} style={{ background: "#fff", border: `1px solid ${C.line}`, padding: 22 }}>
-          <label style={{ display: "block", marginBottom: 14 }}>
+          <label style={{ display: "block", marginBottom: 18 }}>
             <div style={lbl}>Nazwa firmy</div>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. Wolf Meble" style={inp} />
           </label>
-          <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
-            <label style={{ flex: 1 }}>
-              <div style={lbl}>Domyślna cena za m²</div>
-              <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" style={inp} />
-            </label>
-            <label style={{ flex: "0 0 110px" }}>
-              <div style={lbl}>Waluta</div>
-              <input value={currency} onChange={(e) => setCurrency(e.target.value)} style={inp} />
-            </label>
-          </div>
 
           {error && (
             <div style={{ marginBottom: 14, padding: 10, background: "#fff", borderLeft: `4px solid ${C.red}`, color: C.red, fontSize: 13 }}>

@@ -1,23 +1,34 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import { computeResult } from "../lib/calc.js";
 import { parseDimensionsFromText } from "../lib/parseText.js";
+import { readTextFromImage } from "../lib/ocr.js";
+import { createOrganization } from "../lib/org.js";
 import { buildOfferHTML } from "../lib/offer.js";
+import { COMPANY_NAME } from "../config.js";
+import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
-export default function Calculator({ onSaved }) {
-  const { org, user } = useAuth();
+export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
+  const { org, user, refreshOrg } = useAuth();
+  // Gdy edytujemy zapisaną wycenę — trzymamy jej id (zapis nadpisze, nie doda nowej).
+  const [editId, setEditId] = useState(null);
+  const [origClientId, setOrigClientId] = useState(null);
+  const [origClientName, setOrigClientName] = useState("");
   const [tab, setTab] = useState("text"); // text | image
   const [emailText, setEmailText] = useState("");
   const [image, setImage] = useState(null);
-  const [price, setPrice] = useState(org?.default_price != null ? String(org.default_price) : "180");
-  const [unit, setUnit] = useState(org?.default_currency || "PLN");
+  const [ocrProgress, setOcrProgress] = useState(0);
+  // Cena zależy od użytego materiału — podaje się ją przy każdej wycenie, nic nie podpowiadamy.
+  const [price, setPrice] = useState("");
+  const [unit, setUnit] = useState("PLN");
+  const [vatRate, setVatRate] = useState("23"); // "23" | "8" | "5" | "0" | "custom"
+  const [vatCustom, setVatCustom] = useState(""); // własna stawka, gdy vatRate === "custom"
   const [surfaceMode, setSurfaceMode] = useState("auto"); // auto | front | full
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
-  const [company, setCompany] = useState(org?.name || "");
   const [client, setClient] = useState("");
   const [offerNo, setOfferNo] = useState(() => "OF/" + new Date().toISOString().slice(0, 10).replace(/-/g, "/"));
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -27,7 +38,57 @@ export default function Calculator({ onSaved }) {
   const fileRef = useRef(null);
   const iframeRef = useRef(null);
 
-  const meta = { offerNo, company, client, unit };
+  const meta = { offerNo, company: COMPANY_NAME, client, unit };
+
+  // Wczytanie zapisanej wyceny do edycji: wypełnia pola i przelicza wynik z zapisanych wymiarów.
+  useEffect(() => {
+    if (!editingQuote) return;
+    const q = editingQuote;
+    const rate = Number(q.vat_rate) || 0;
+    const mode = q.surface_mode || "auto";
+    const p = parseFloat(String(q.price_per_m2).replace(",", ".")) || 0;
+
+    setEditId(q.id);
+    setOrigClientId(q.client_id || null);
+    setOrigClientName(q.client_name || "");
+    setPrice(q.price_per_m2 != null ? String(q.price_per_m2) : "");
+    setUnit(q.currency || "PLN");
+    setOfferNo(q.offer_no || "");
+    setClient(q.client_name || "");
+    setSurfaceMode(mode);
+    if (["23", "8", "5", "0"].includes(String(rate))) {
+      setVatRate(String(rate));
+      setVatCustom("");
+    } else {
+      setVatRate("custom");
+      setVatCustom(String(rate));
+    }
+    const rawItems = (q.items || []).map((it) => ({
+      label: it.label,
+      width_m: it.width_m,
+      height_m: it.height_m,
+      depth_m: it.depth_m,
+      note: it.note,
+    }));
+    setResult(computeResult(rawItems, [], p, mode, rate));
+    setSaved(false);
+    setTab("text");
+    onEditLoaded?.(); // wyczyść w rodzicu, żeby nie wczytywać ponownie
+    if (typeof window !== "undefined") window.scrollTo(0, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingQuote]);
+
+  const cancelEdit = () => {
+    setEditId(null);
+    setOrigClientId(null);
+    setOrigClientName("");
+    setResult(null);
+    setClient("");
+    setEmailText("");
+    setImage(null);
+    setSaved(false);
+    setError("");
+  };
 
   const handleFile = (e) => {
     const f = e.target.files?.[0];
@@ -37,13 +98,33 @@ export default function Calculator({ onSaved }) {
     reader.readAsDataURL(f);
   };
 
+  // Stawka VAT jako liczba (obsługuje przecinek i własną wartość).
+  const vatNum = () => {
+    const raw = vatRate === "custom" ? vatCustom : vatRate;
+    const v = parseFloat(String(raw).replace(",", "."));
+    return Number.isFinite(v) && v >= 0 ? v : 0;
+  };
+
+  // Przelicza istniejący wynik dla podanego trybu i stawki VAT (bez ponownego czytania maila/zdjęcia).
+  const rebuild = (mode, vat) => {
+    if (!result) return;
+    const base = result.warnings.filter((w) => !w.includes("policzono sam front"));
+    setResult(computeResult(result.items, base, result.p, mode, vat));
+    setSaved(false);
+  };
+
   const recompute = (mode) => {
     setSurfaceMode(mode);
-    if (result) {
-      const base = result.warnings.filter((w) => !w.includes("policzono sam front"));
-      setResult(computeResult(result.items, base, result.p, mode));
-      setSaved(false);
-    }
+    rebuild(mode, vatNum());
+  };
+
+  // Zmiana stawki VAT ma od razu odświeżyć kwoty (bez klikania „Przelicz").
+  const changeVat = (nextRate, nextCustom = vatCustom) => {
+    setVatRate(nextRate);
+    setVatCustom(nextCustom);
+    const raw = nextRate === "custom" ? nextCustom : nextRate;
+    const v = parseFloat(String(raw).replace(",", "."));
+    rebuild(surfaceMode, Number.isFinite(v) && v >= 0 ? v : 0);
   };
 
   const analyze = async () => {
@@ -58,58 +139,36 @@ export default function Calculator({ onSaved }) {
     // Treść maila: odczyt lokalny — bez API, natychmiast i bez kosztów.
     if (tab === "text") {
       const parsed = parseDimensionsFromText(emailText);
-      setResult(computeResult(parsed.items, parsed.warnings, p, surfaceMode));
+      setResult(computeResult(parsed.items, parsed.warnings, p, surfaceMode, vatNum()));
       return;
     }
 
-    // Rysunek/zdjęcie: wymaga modelu z wizją (klucz API trzymany po stronie serwera).
+    // Rysunek/zdjęcie: OCR w przeglądarce — 0 zł, bez klucza, zdjęcie nie opuszcza komputera.
     setLoading(true);
-
-    const sys =
-      "Jesteś asystentem wyceny obudów grzejnikowych (kaloryferów). " +
-      "Ze źródła wyciągnij WSZYSTKIE obudowy wraz z wymiarami: szerokość, wysokość oraz głębokość, jeśli klient ją podał. " +
-      "Wymiary mogą być w cm lub mm; przelicz na metry. Jeśli jednostka nie jest podana, załóż cm. " +
-      "Zapis typu 60x40 traktuj jako szerokość x wysokość. Zapis 60x40x10 traktuj jako szerokość x wysokość x głębokość. " +
-      "Jeśli klient nie podał głębokości, pomiń pole depth_m (nie zgaduj). " +
-      "Zwróć WYŁĄCZNIE czysty JSON (bez markdown, bez komentarzy) w formacie: " +
-      '{"items":[{"label":"opis lub nazwa","width_m":liczba,"height_m":liczba,"depth_m":liczba lub pomiń,"note":"opcjonalna uwaga jeśli coś niejasne"}],"warnings":["ostrzeżenia jeśli brakuje danych"]}. ' +
-      "Jeśli nie znajdziesz żadnych wymiarów, zwróć items:[] i opisz problem w warnings.";
-
-    const content =
-      tab === "image"
-        ? [
-            { type: "image", source: { type: "base64", media_type: image.media_type, data: image.data } },
-            { type: "text", text: "Odczytaj wymiary obudów kaloryferów z tego rysunku/zdjęcia." },
-          ]
-        : [{ type: "text", text: "Treść maila:\n\n" + emailText }];
-
+    setOcrProgress(0);
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "/api/messages";
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: sys,
-          messages: [{ role: "user", content }],
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.content) {
-        throw new Error("api");
+      const dataUrl = `data:${image.media_type};base64,${image.data}`;
+      const text = await readTextFromImage(dataUrl, setOcrProgress);
+
+      if (!text.trim()) {
+        setError(
+          "Nie udało się odczytać żadnego tekstu z tego zdjęcia. Zdjęcie musi być wyraźne, a wymiary pisane drukiem — " +
+            "pismo odręczne nie zostanie rozpoznane. Możesz też przepisać wymiary w zakładce „Treść maila”."
+        );
+        return;
       }
-      const text = data.content.map((i) => (i.type === "text" ? i.text : "")).join("");
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setResult(computeResult(parsed.items || [], parsed.warnings || [], p, surfaceMode));
+
+      const parsed = parseDimensionsFromText(text);
+      const warnings = [...parsed.warnings];
+      if (parsed.items.length > 0) {
+        warnings.unshift("Wymiary odczytano automatycznie ze zdjęcia — sprawdź je, zanim wyślesz ofertę klientowi.");
+      }
+      setResult(computeResult(parsed.items, warnings, p, surfaceMode, vatNum()));
     } catch (err) {
-      setError(
-        "Odczyt ze zdjęcia wymaga klucza API (płatny, ok. 1 grosz za zdjęcie) — nie jest skonfigurowany. " +
-          "Na razie użyj zakładki „Treść maila” — działa bez klucza i za darmo."
-      );
+      setError("Nie udało się odczytać zdjęcia. " + toPolish(err, "Spróbuj ponownie lub przepisz wymiary ręcznie."));
     } finally {
       setLoading(false);
+      setOcrProgress(0);
     }
   };
 
@@ -145,42 +204,70 @@ export default function Calculator({ onSaved }) {
 
   // Zapis wyceny do bazy (firma + autor + pozycje).
   const saveQuote = async () => {
-    if (!result || result.items.length === 0 || !org) return;
-    setSaving(true);
+    if (!result || result.items.length === 0) return;
     setError("");
+
+    setSaving(true);
     try {
-      let clientId = null;
-      if (client.trim()) {
-        const { data: cli } = await supabase
-          .from("clients")
-          .insert({ org_id: org.id, name: client.trim() })
-          .select("id")
-          .single();
-        clientId = cli?.id || null;
+      // Jedna firma: RELF. Zakładamy ją w tle przy pierwszym zapisie — bez pytania.
+      let activeOrg = org;
+      if (!activeOrg) {
+        activeOrg = await createOrganization(COMPANY_NAME, user.id);
+        await refreshOrg();
       }
 
-      const { data: quote, error: qErr } = await supabase
-        .from("quotes")
-        .insert({
-          org_id: org.id,
-          created_by: user.id,
-          client_id: clientId,
-          offer_no: offerNo,
-          company_name: company,
-          price_per_m2: result.p,
-          currency: unit,
-          surface_mode: result.mode,
-          total_area: result.totalArea,
-          total_cost: result.totalCost,
-          status: "draft",
-          warnings: result.warnings,
-        })
-        .select("id")
-        .single();
-      if (qErr) throw qErr;
+      // Klient: nie duplikujemy wpisu, gdy nazwa się nie zmieniła (przy edycji).
+      let clientId = origClientId;
+      if (client.trim() !== (origClientName || "").trim()) {
+        clientId = null;
+        if (client.trim()) {
+          const { data: cli } = await supabase
+            .from("clients")
+            .insert({ org_id: activeOrg.id, name: client.trim() })
+            .select("id")
+            .single();
+          clientId = cli?.id || null;
+        }
+      }
+
+      const payload = {
+        client_id: clientId,
+        offer_no: offerNo,
+        company_name: COMPANY_NAME,
+        price_per_m2: result.p,
+        currency: unit,
+        vat_rate: result.vatRate,
+        surface_mode: result.mode,
+        total_area: result.totalArea,
+        total_cost: result.totalNet,
+        warnings: result.warnings,
+      };
+
+      let quoteId = editId;
+      if (editId) {
+        // Edycja: nadpisujemy wycenę i podmieniamy jej pozycje. Autor (kto zapisał) zostaje bez zmian.
+        const { error: uErr } = await supabase.from("quotes").update(payload).eq("id", editId);
+        if (uErr) throw uErr;
+        const { error: dErr } = await supabase.from("quote_items").delete().eq("quote_id", editId);
+        if (dErr) throw dErr;
+      } else {
+        const { data: quote, error: qErr } = await supabase
+          .from("quotes")
+          .insert({
+            ...payload,
+            org_id: activeOrg.id,
+            created_by: user.id,
+            created_by_email: user.email,
+            status: "draft",
+          })
+          .select("id")
+          .single();
+        if (qErr) throw qErr;
+        quoteId = quote.id;
+      }
 
       const items = result.items.map((it) => ({
-        quote_id: quote.id,
+        quote_id: quoteId,
         label: it.label || null,
         width_m: it.width_m ?? null,
         height_m: it.height_m ?? null,
@@ -196,7 +283,7 @@ export default function Calculator({ onSaved }) {
       setSaved(true);
       onSaved?.();
     } catch (err) {
-      setError("Nie udało się zapisać wyceny: " + (err.message || "błąd"));
+      setError("Nie udało się zapisać wyceny. " + toPolish(err, "Spróbuj ponownie."));
     } finally {
       setSaving(false);
     }
@@ -208,36 +295,66 @@ export default function Calculator({ onSaved }) {
         <div style={{ fontSize: 11, letterSpacing: 3, textTransform: "uppercase", color: C.brass, fontWeight: 700 }}>
           Wycena · obudowy kaloryferów
         </div>
-        <h1 style={{ fontSize: 32, margin: "6px 0 0", fontWeight: 800, letterSpacing: -0.5 }}>Nowa wycena</h1>
+        <h1 style={{ fontSize: 32, margin: "6px 0 0", fontWeight: 800, letterSpacing: -0.5 }}>
+          {editId ? "Edytujesz wycenę" : "Nowa wycena"}
+        </h1>
         <p style={{ margin: "8px 0 0", fontSize: 14, color: C.steel }}>
-          Wklej maila lub wgraj rysunek. Liczę powierzchnię × cenę materiału za m².
+          {editId
+            ? "Zmień co trzeba i zapisz — nadpiszesz istniejącą wycenę. Aby zmienić wymiary, wklej je ponownie i kliknij „Przelicz”."
+            : "Wpisz cenę, wklej maila lub wgraj rysunek — policz. Dane klienta podasz dopiero przy zapisie."}
         </p>
+        {editId && (
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.brass, background: "#faf3e6", border: `1px solid ${C.brass}`, padding: "4px 10px" }}>
+              Tryb edycji · {offerNo || "wycena"}
+            </span>
+            <button
+              onClick={cancelEdit}
+              style={{ border: `1px solid ${C.line}`, background: "#fff", padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: C.steel }}
+            >
+              Anuluj edycję
+            </button>
+          </div>
+        )}
       </header>
 
-      <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <label style={{ flex: "1 1 180px" }}>
-          <div style={lbl}>Firma (nagłówek oferty)</div>
-          <input value={company} onChange={(e) => setCompany(e.target.value)} style={inp} />
-        </label>
-        <label style={{ flex: "1 1 180px" }}>
-          <div style={lbl}>Klient</div>
-          <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="np. Jan Kowalski" style={inp} />
-        </label>
-        <label style={{ flex: "1 1 140px" }}>
-          <div style={lbl}>Nr oferty</div>
-          <input value={offerNo} onChange={(e) => setOfferNo(e.target.value)} style={inp} />
-        </label>
-      </div>
-
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-        <label style={{ flex: "1 1 160px" }}>
-          <div style={lbl}>Cena materiału za m²</div>
-          <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" style={inp} />
+        <label style={{ flex: "1 1 150px" }}>
+          <div style={lbl}>Cena netto za m²</div>
+          <input
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            inputMode="decimal"
+            placeholder="np. 180"
+            style={inp}
+          />
         </label>
-        <label style={{ flex: "0 0 110px" }}>
+        <label style={{ flex: "0 0 90px" }}>
           <div style={lbl}>Waluta</div>
           <input value={unit} onChange={(e) => setUnit(e.target.value)} style={inp} />
         </label>
+        <label style={{ flex: "0 0 110px" }}>
+          <div style={lbl}>Stawka VAT</div>
+          <select value={vatRate} onChange={(e) => changeVat(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+            <option value="23">23%</option>
+            <option value="8">8%</option>
+            <option value="5">5%</option>
+            <option value="0">0%</option>
+            <option value="custom">Inna…</option>
+          </select>
+        </label>
+        {vatRate === "custom" && (
+          <label style={{ flex: "0 0 110px" }}>
+            <div style={lbl}>Własna (%)</div>
+            <input
+              value={vatCustom}
+              onChange={(e) => changeVat("custom", e.target.value)}
+              inputMode="decimal"
+              placeholder="np. 8"
+              style={inp}
+            />
+          </label>
+        )}
       </div>
 
       <div style={{ marginBottom: 20 }}>
@@ -337,7 +454,8 @@ export default function Calculator({ onSaved }) {
           textTransform: "uppercase",
         }}
       >
-        {loading ? "Liczę…" : "Przelicz wycenę"}
+        {/* OCR trwa kilkanaście sekund — bez postępu wyglądałoby to na zawieszenie. */}
+        {loading ? (ocrProgress > 0 ? `Odczytuję zdjęcie… ${ocrProgress}%` : "Liczę…") : "Przelicz wycenę"}
       </button>
 
       {error && <div style={{ marginTop: 14, padding: 12, background: "#fff", borderLeft: `4px solid ${C.red}`, color: C.red, fontSize: 14 }}>{error}</div>}
@@ -367,11 +485,38 @@ export default function Calculator({ onSaved }) {
                   <div style={{ textAlign: "right", fontWeight: 700 }}>{fmt(it.cost)}</div>
                 </div>
               ))}
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.7fr 1fr", padding: "14px", background: C.ink, color: C.paper, fontSize: 15, fontWeight: 800 }}>
-                <div>RAZEM</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.9fr 0.7fr 1fr", padding: "12px 14px", borderTop: `1px solid ${C.line}`, fontSize: 14 }}>
+                <div style={{ fontWeight: 600 }}>Razem netto</div>
                 <div></div>
                 <div>{fmt(result.totalArea)}</div>
-                <div style={{ textAlign: "right" }}>{fmt(result.totalCost)} {unit}</div>
+                <div style={{ textAlign: "right", fontWeight: 700 }}>{fmt(result.totalNet)} {unit}</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", borderTop: `1px solid ${C.line}`, fontSize: 14, color: C.steel }}>
+                <span>VAT {fmt(result.vatRate)}%</span>
+                <span style={{ fontWeight: 700 }}>{fmt(result.vatAmount)} {unit}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "14px", background: C.ink, color: C.paper, fontSize: 16, fontWeight: 800 }}>
+                <span>Do zapłaty (brutto)</span>
+                <span>{fmt(result.totalGross)} {unit}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Dane do oferty pojawiają się dopiero po przeliczeniu — wypełniasz je, gdy wynik Ci pasuje. */}
+          {result.items.length > 0 && (
+            <div style={{ marginTop: 20, background: "#fff", border: `1px solid ${C.line}`, padding: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel, marginBottom: 12 }}>
+                Dane do oferty
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <label style={{ flex: "2 1 220px" }}>
+                  <div style={lbl}>Klient (e-mail lub nazwa)</div>
+                  <input value={client} onChange={(e) => setClient(e.target.value)} placeholder="np. jan@firma.pl" style={inp} />
+                </label>
+                <label style={{ flex: "1 1 140px" }}>
+                  <div style={lbl}>Nr oferty</div>
+                  <input value={offerNo} onChange={(e) => setOfferNo(e.target.value)} style={inp} />
+                </label>
               </div>
             </div>
           )}
@@ -394,7 +539,7 @@ export default function Calculator({ onSaved }) {
                   textTransform: "uppercase",
                 }}
               >
-                {saving ? "Zapisuję…" : saved ? "✓ Zapisano w bazie" : "Zapisz wycenę"}
+                {saving ? "Zapisuję…" : saved ? "✓ Zapisano w bazie" : editId ? "Zapisz zmiany" : "Zapisz wycenę"}
               </button>
               <button
                 onClick={openPreview}

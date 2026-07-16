@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
     }
     const { data, error } = await supabase
       .from("memberships")
-      .select("role, organizations ( id, name, default_price, default_currency )")
+      .select("role, organizations ( id, name )")
       .eq("user_id", userId)
       .limit(1)
       .maybeSingle();
