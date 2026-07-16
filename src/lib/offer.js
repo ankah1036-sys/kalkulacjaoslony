@@ -35,6 +35,33 @@ export function buildOfferEmailBody(result, meta) {
   ].join("\n");
 }
 
+// Zlecenie na produkcję/pakowanie — te same pozycje co oferta, ale BEZ cen
+// (materiał, wymiary, powierzchnia, akcesoria z ilościami, uwagi).
+export function buildProductionEmailBody(result, meta) {
+  const { offerNo = "", client = "", material = "" } = meta || {};
+  const rows = result.items.map((it) => {
+    const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
+    const basis = it.basis ? ` (${it.basis})` : "";
+    return `• ${it.label || "Pozycja"} — ${dims}${basis} — ${fmt(it.area)} m²${it.note ? " — " + it.note : ""}`;
+  });
+  const accRows = (result.accessories || []).map((a) => `• ${a.name || "Akcesorium"} — ${fmt(a.qty)} szt.`);
+  return [
+    "Zlecenie na produkcję / pakowanie",
+    "",
+    `Nr oferty: ${offerNo}`,
+    ...(client ? [`Klient: ${client}`] : []),
+    ...(material ? [`Materiał: ${material}`] : []),
+    "",
+    "Pozycje do wykonania:",
+    ...rows,
+    ...(accRows.length ? ["", "Akcesoria:", ...accRows] : []),
+    "",
+    "Dokument roboczy dla produkcji — bez cen. Wymiary wg zaakceptowanej oferty.",
+    "",
+    COMPANY_NAME,
+  ].join("\n");
+}
+
 const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"]/g, (m) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m])

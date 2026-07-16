@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
-import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
+import { buildOfferHTML, buildOfferEmailBody, buildProductionEmailBody } from "../lib/offer.js";
 import { accessoryTotals } from "../lib/calc.js";
 import SentDialog from "./SentDialog.jsx";
 import { toPolish } from "../lib/errors.js";
-import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
+import { COMPANY_NAME, COMPANY_EMAIL, PRODUCTION_EMAIL } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
 export default function Quotes({ onEdit }) {
@@ -20,7 +20,7 @@ export default function Quotes({ onEdit }) {
   const [previewData, setPreviewData] = useState(null); // { result, offerNo, client, unit } — do maila
   const [showPreview, setShowPreview] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [sentTo, setSentTo] = useState(null); // po wysyłce: adres odbiorcy (null = modal zamknięty)
+  const [sent, setSent] = useState(null); // po wysyłce: { to, offerNo, title?, docWord?, hint? } (null = zamknięty)
   const iframeRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -107,7 +107,46 @@ export default function Quotes({ onEdit }) {
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
     const body = buildOfferEmailBody(result, { offerNo, unit, material });
     window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    setSentTo(to || "");
+    setSent({ to: to || "", offerNo });
+  };
+
+  // Wysyłka zlecenia na produkcję (bez cen). Dostępna spod „⋮" tylko dla wyceny „Zaakceptowana".
+  const sendToProduction = async (row) => {
+    setBusyId(row.id);
+    setError("");
+    try {
+      const { data: items } = await supabase.from("quote_items").select("*").eq("quote_id", row.id);
+      const { data: full } = await supabase
+        .from("quotes")
+        .select("vat_rate, material, accessories")
+        .eq("id", row.id)
+        .single();
+      const accT = accessoryTotals(full?.accessories, Number(full?.vat_rate) || 0);
+      const result = { items: items || [], accessories: accT.items };
+      const body = buildProductionEmailBody(result, {
+        offerNo: row.offer_no,
+        client: row.clients?.name || "",
+        material: full?.material || "",
+      });
+      const subject = `Zlecenie na produkcję ${row.offer_no || ""} — ${COMPANY_NAME}`;
+      window.location.href = `mailto:${PRODUCTION_EMAIL || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      setSent({
+        to: PRODUCTION_EMAIL || "",
+        offerNo: row.offer_no,
+        title: "Zlecenie przekazane do produkcji",
+        docWord: "treścią zlecenia",
+        hint: (
+          <>
+            To dokument dla produkcji — <strong style={{ color: C.ink }}>bez cen</strong>.{" "}
+            {PRODUCTION_EMAIL ? "Sprawdź i wyślij ze swojej skrzynki." : "Wpisz adres produkcji i wyślij ze swojej skrzynki."}
+          </>
+        ),
+      });
+    } catch (e) {
+      setError("Nie udało się przygotować zlecenia na produkcję. " + toPolish(e, "Spróbuj ponownie."));
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const previewClientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((previewData?.client || "").trim());
@@ -286,6 +325,11 @@ export default function Quotes({ onEdit }) {
                     <div style={menuStyle}>
                       <button onClick={() => { setOpenMenuId(null); edit(r); }} style={menuItem}>Edytuj</button>
                       <button onClick={() => { setOpenMenuId(null); openPdf(r); }} style={menuItem}>PDF</button>
+                      {r.status === "accepted" && (
+                        <button onClick={() => { setOpenMenuId(null); sendToProduction(r); }} style={{ ...menuItem, color: C.green, fontWeight: 700 }}>
+                          ✉ Wyślij na produkcję
+                        </button>
+                      )}
                       <button onClick={() => { setOpenMenuId(null); remove(r); }} style={{ ...menuItem, borderBottom: "none", color: C.red }}>Usuń</button>
                     </div>
                   </>
@@ -297,7 +341,15 @@ export default function Quotes({ onEdit }) {
         </div>
       )}
 
-      <SentDialog open={sentTo !== null} to={sentTo} offerNo={previewData?.offerNo} onClose={() => setSentTo(null)} />
+      <SentDialog
+        open={sent !== null}
+        to={sent?.to}
+        offerNo={sent?.offerNo}
+        title={sent?.title}
+        docWord={sent?.docWord}
+        hint={sent?.hint}
+        onClose={() => setSent(null)}
+      />
 
       {showPreview && (
         <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }}>
