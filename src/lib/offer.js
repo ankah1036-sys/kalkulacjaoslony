@@ -1,4 +1,31 @@
 import { C, fmt } from "../theme.js";
+import { COMPANY_NAME } from "../config.js";
+
+// Treść oferty jako zwykły tekst do maila (ta sama w kalkulatorze i w bazie kalkulacji).
+// `meta` = { offerNo, unit }
+export function buildOfferEmailBody(result, meta) {
+  const { offerNo = "", unit = "PLN" } = meta || {};
+  const rows = result.items.map((it) => {
+    const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
+    return `• ${it.label || "Pozycja"} — ${dims} — ${fmt(it.area)} m² — ${fmt(it.cost)} ${unit}`;
+  });
+  return [
+    "Dzień dobry,",
+    "",
+    `w załączeniu oferta na osłony grzejnikowe (nr ${offerNo}).`,
+    "",
+    ...rows,
+    "",
+    `Razem netto: ${fmt(result.totalNet)} ${unit}`,
+    `VAT ${fmt(result.vatRate)}%: ${fmt(result.vatAmount)} ${unit}`,
+    `Do zapłaty (brutto): ${fmt(result.totalGross)} ${unit}`,
+    "",
+    "Oferta ważna 14 dni. Wymiary do potwierdzenia po pomiarze z natury.",
+    "",
+    "Pozdrawiam,",
+    COMPANY_NAME,
+  ].join("\n");
+}
 
 const esc = (s) =>
   String(s == null ? "" : s).replace(/[&<>"]/g, (m) =>

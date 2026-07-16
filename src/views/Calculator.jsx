@@ -5,7 +5,7 @@ import { computeResult } from "../lib/calc.js";
 import { parseDimensionsFromText } from "../lib/parseText.js";
 import { readTextFromImage } from "../lib/ocr.js";
 import { createOrganization } from "../lib/org.js";
-import { buildOfferHTML } from "../lib/offer.js";
+import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
 import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, fmt } from "../theme.js";
@@ -127,36 +127,12 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     rebuild(surfaceMode, Number.isFinite(v) && v >= 0 ? v : 0);
   };
 
-  // Treść oferty w mailu (zwykły tekst — czyta się w każdym programie pocztowym).
-  const offerEmailBody = () => {
-    if (!result) return "";
-    const rows = result.items.map((it) => {
-      const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
-      return `• ${it.label || "Pozycja"} — ${dims} — ${fmt(it.area)} m² — ${fmt(it.cost)} ${unit}`;
-    });
-    return [
-      "Dzień dobry,",
-      "",
-      `w załączeniu oferta na osłony grzejnikowe (nr ${offerNo}).`,
-      "",
-      ...rows,
-      "",
-      `Razem netto: ${fmt(result.totalNet)} ${unit}`,
-      `VAT ${fmt(result.vatRate)}%: ${fmt(result.vatAmount)} ${unit}`,
-      `Do zapłaty (brutto): ${fmt(result.totalGross)} ${unit}`,
-      "",
-      "Oferta ważna 14 dni. Wymiary do potwierdzenia po pomiarze z natury.",
-      "",
-      "Pozdrawiam,",
-      COMPANY_NAME,
-    ].join("\n");
-  };
-
   // Otwiera program pocztowy z gotowym adresem, tematem i treścią oferty.
   const sendOffer = (to) => {
+    if (!result) return;
     const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
-    const url = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(offerEmailBody())}`;
-    window.location.href = url;
+    const body = buildOfferEmailBody(result, { offerNo, unit });
+    window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const clientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(client.trim());

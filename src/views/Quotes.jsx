@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
-import { buildOfferHTML } from "../lib/offer.js";
+import { buildOfferHTML, buildOfferEmailBody } from "../lib/offer.js";
 import { toPolish } from "../lib/errors.js";
-import { COMPANY_NAME } from "../config.js";
+import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
 export default function Quotes({ onEdit }) {
@@ -14,6 +14,7 @@ export default function Quotes({ onEdit }) {
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [previewHTML, setPreviewHTML] = useState("");
+  const [previewData, setPreviewData] = useState(null); // { result, offerNo, client, unit } — do maila
   const [showPreview, setShowPreview] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const iframeRef = useRef(null);
@@ -78,6 +79,7 @@ export default function Quotes({ onEdit }) {
         unit: row.currency,
       });
       setPreviewHTML(html);
+      setPreviewData({ result, offerNo: row.offer_no, client: row.clients?.name || "", unit: row.currency });
       setShowPreview(true);
     } catch (e) {
       setError("Nie udało się otworzyć oferty. " + toPolish(e, "Spróbuj ponownie."));
@@ -85,6 +87,17 @@ export default function Quotes({ onEdit }) {
       setBusyId(null);
     }
   };
+
+  // Otwiera program pocztowy z gotową ofertą (jak w kalkulatorze).
+  const sendOffer = (to) => {
+    if (!previewData) return;
+    const { result, offerNo, unit } = previewData;
+    const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
+    const body = buildOfferEmailBody(result, { offerNo, unit });
+    window.location.href = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const previewClientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((previewData?.client || "").trim());
 
   // Druk/zapis PDF z podglądu (użytkownik wybiera „Zapisz jako PDF" w oknie druku).
   const printPreview = () => {
@@ -221,12 +234,28 @@ export default function Quotes({ onEdit }) {
             <div style={{ flex: 1, overflow: "auto", padding: 16, background: "#9b958a" }}>
               <iframe ref={iframeRef} title="Podgląd oferty" srcDoc={previewHTML} style={{ width: "100%", minHeight: 760, border: "none", background: "#fff", boxShadow: "0 4px 18px rgba(0,0,0,0.25)" }} />
             </div>
-            <div style={{ padding: "14px 18px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 10, background: C.paper }}>
+            <div style={{ padding: "12px 18px 0", display: "flex", gap: 10, background: C.paper }}>
+              <button
+                onClick={() => sendOffer((previewData?.client || "").trim())}
+                disabled={!previewClientIsEmail}
+                title={previewClientIsEmail ? "" : "Ta wycena nie ma zapisanego e-maila klienta"}
+                style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: previewClientIsEmail ? "pointer" : "not-allowed", border: `1px solid ${C.ink}`, background: previewClientIsEmail ? "#fff" : C.paper, color: previewClientIsEmail ? C.ink : C.line }}
+              >
+                ✉ Do klienta
+              </button>
+              <button
+                onClick={() => sendOffer(COMPANY_EMAIL)}
+                style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "#fff", color: C.ink }}
+              >
+                ✉ Do biura RELF
+              </button>
+            </div>
+            <div style={{ padding: "10px 18px", display: "flex", gap: 10, background: C.paper }}>
               <button onClick={() => setShowPreview(false)} style={{ flex: "0 0 auto", padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "transparent", color: C.ink }}>Zamknij</button>
               <button onClick={printPreview} disabled={pdfLoading} style={{ flex: 1, padding: "12px 0", fontSize: 14, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", cursor: pdfLoading ? "wait" : "pointer", border: "none", background: C.green, color: "#fff" }}>{pdfLoading ? "Otwieram…" : "↓ Zapisz / drukuj PDF"}</button>
             </div>
             <div style={{ padding: "0 18px 12px", fontSize: 11, color: C.steel, background: C.paper }}>
-              W oknie druku wybierz drukarkę „Zapisz jako PDF", aby pobrać plik dla klienta.
+              Mail otwiera Twój program pocztowy z treścią oferty; PDF dołącz ręcznie (najpierw „Zapisz / drukuj PDF").
             </div>
           </div>
         </div>
