@@ -6,7 +6,7 @@ import { parseDimensionsFromText } from "../lib/parseText.js";
 import { readTextFromImage } from "../lib/ocr.js";
 import { createOrganization } from "../lib/org.js";
 import { buildOfferHTML } from "../lib/offer.js";
-import { COMPANY_NAME } from "../config.js";
+import { COMPANY_NAME, COMPANY_EMAIL } from "../config.js";
 import { toPolish } from "../lib/errors.js";
 import { C, lbl, inp, fmt } from "../theme.js";
 
@@ -126,6 +126,40 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     const v = parseFloat(String(raw).replace(",", "."));
     rebuild(surfaceMode, Number.isFinite(v) && v >= 0 ? v : 0);
   };
+
+  // Treść oferty w mailu (zwykły tekst — czyta się w każdym programie pocztowym).
+  const offerEmailBody = () => {
+    if (!result) return "";
+    const rows = result.items.map((it) => {
+      const dims = `${fmt(it.width_m)}×${fmt(it.height_m)}${it.depth_m ? "×" + fmt(it.depth_m) : ""} m`;
+      return `• ${it.label || "Pozycja"} — ${dims} — ${fmt(it.area)} m² — ${fmt(it.cost)} ${unit}`;
+    });
+    return [
+      "Dzień dobry,",
+      "",
+      `w załączeniu oferta na osłony grzejnikowe (nr ${offerNo}).`,
+      "",
+      ...rows,
+      "",
+      `Razem netto: ${fmt(result.totalNet)} ${unit}`,
+      `VAT ${fmt(result.vatRate)}%: ${fmt(result.vatAmount)} ${unit}`,
+      `Do zapłaty (brutto): ${fmt(result.totalGross)} ${unit}`,
+      "",
+      "Oferta ważna 14 dni. Wymiary do potwierdzenia po pomiarze z natury.",
+      "",
+      "Pozdrawiam,",
+      COMPANY_NAME,
+    ].join("\n");
+  };
+
+  // Otwiera program pocztowy z gotowym adresem, tematem i treścią oferty.
+  const sendOffer = (to) => {
+    const subject = `Oferta ${offerNo} — ${COMPANY_NAME}`;
+    const url = `mailto:${to || ""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(offerEmailBody())}`;
+    window.location.href = url;
+  };
+
+  const clientIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(client.trim());
 
   const analyze = async () => {
     setError("");
@@ -565,6 +599,33 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
               >
                 Pokaż ofertę →
               </button>
+            </div>
+          )}
+
+          {result.items.length > 0 && (
+            <div style={{ marginTop: 14, background: "#fff", border: `1px solid ${C.line}`, padding: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel, marginBottom: 10 }}>
+                Wyślij ofertę mailem
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => sendOffer(client.trim())}
+                  disabled={!clientIsEmail}
+                  title={clientIsEmail ? "" : "Wpisz e-mail klienta w polu „Klient” powyżej"}
+                  style={{ flex: "1 1 200px", padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: clientIsEmail ? "pointer" : "not-allowed", border: `1px solid ${C.ink}`, background: clientIsEmail ? "#fff" : C.paper, color: clientIsEmail ? C.ink : C.line }}
+                >
+                  ✉ Do klienta
+                </button>
+                <button
+                  onClick={() => sendOffer(COMPANY_EMAIL)}
+                  style={{ flex: "1 1 200px", padding: "11px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", border: `1px solid ${C.ink}`, background: "#fff", color: C.ink }}
+                >
+                  ✉ Do biura RELF
+                </button>
+              </div>
+              <div style={{ marginTop: 8, fontSize: 11, color: C.steel, lineHeight: 1.5 }}>
+                Otworzy Twój program pocztowy z gotową treścią. <strong>PDF dołącz ręcznie</strong> — wcześniej zapisz go przez „Pokaż ofertę → Zapisz / drukuj PDF".
+              </div>
             </div>
           )}
 
