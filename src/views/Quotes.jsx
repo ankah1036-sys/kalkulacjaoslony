@@ -13,6 +13,7 @@ export default function Quotes({ onEdit }) {
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null); // który wiersz ma otwarte menu „⋮"
   const [previewHTML, setPreviewHTML] = useState("");
   const [previewData, setPreviewData] = useState(null); // { result, offerNo, client, unit } — do maila
   const [showPreview, setShowPreview] = useState(false);
@@ -202,7 +203,7 @@ export default function Quotes({ onEdit }) {
         </div>
       ) : (
         <div style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr 1.2fr 0.85fr 1.25fr", padding: "10px 14px", borderBottom: `1px solid ${C.ink}`, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.15fr 1.2fr 0.95fr 0.5fr", padding: "10px 14px", borderBottom: `1px solid ${C.ink}`, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, color: C.steel }}>
             <div>Nr / data</div>
             <div>Klient</div>
             <div>Status</div>
@@ -210,7 +211,7 @@ export default function Quotes({ onEdit }) {
             <div style={{ textAlign: "right" }}>Akcje</div>
           </div>
           {filtered.map((r) => (
-            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 1.05fr 1.2fr 0.85fr 1.25fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center" }}>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1.1fr 1.15fr 1.2fr 0.95fr 0.5fr", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, fontSize: 14, alignItems: "center" }}>
               <div>
                 <div style={{ fontWeight: 600 }}>{r.offer_no || "—"}</div>
                 <div style={{ fontSize: 11, color: C.steel }}>{new Date(r.created_at).toLocaleDateString("pl-PL")}</div>
@@ -248,16 +249,26 @@ export default function Quotes({ onEdit }) {
                 <div style={{ fontWeight: 700 }}>{fmt(Number(r.total_cost) * (1 + (Number(r.vat_rate) || 0) / 100))} {r.currency}</div>
                 <div style={{ fontSize: 11, color: C.steel }}>brutto · netto {fmt(r.total_cost)}</div>
               </div>
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                <button onClick={() => edit(r)} disabled={busyId === r.id} style={miniBtn(C.steel)}>
-                  Edytuj
+              <div style={{ display: "flex", justifyContent: "flex-end", position: "relative" }}>
+                <button
+                  onClick={() => setOpenMenuId(openMenuId === r.id ? null : r.id)}
+                  disabled={busyId === r.id}
+                  title="Akcje"
+                  aria-label="Akcje"
+                  style={kebabBtn}
+                >
+                  {busyId === r.id ? "…" : "⋮"}
                 </button>
-                <button onClick={() => openPdf(r)} disabled={busyId === r.id} style={miniBtn(C.green)}>
-                  {busyId === r.id ? "…" : "PDF"}
-                </button>
-                <button onClick={() => remove(r)} disabled={busyId === r.id} style={miniBtn(C.red)}>
-                  Usuń
-                </button>
+                {openMenuId === r.id && (
+                  <>
+                    <div onClick={() => setOpenMenuId(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                    <div style={menuStyle}>
+                      <button onClick={() => { setOpenMenuId(null); edit(r); }} style={menuItem}>Edytuj</button>
+                      <button onClick={() => { setOpenMenuId(null); openPdf(r); }} style={menuItem}>PDF</button>
+                      <button onClick={() => { setOpenMenuId(null); remove(r); }} style={{ ...menuItem, borderBottom: "none", color: C.red }}>Usuń</button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -305,12 +316,40 @@ export default function Quotes({ onEdit }) {
   );
 }
 
-const miniBtn = (bg) => ({
-  padding: "7px 12px",
-  fontSize: 12,
+const kebabBtn = {
+  width: 34,
+  height: 34,
+  padding: 0,
+  fontSize: 22,
+  lineHeight: 1,
   fontWeight: 700,
-  border: "none",
-  background: bg,
-  color: "#fff",
+  border: `1px solid ${C.line}`,
+  background: "#fff",
+  color: C.steel,
   cursor: "pointer",
-});
+};
+
+const menuStyle = {
+  position: "absolute",
+  top: "calc(100% + 4px)",
+  right: 0,
+  zIndex: 41,
+  minWidth: 150,
+  background: "#fff",
+  border: `1px solid ${C.ink}`,
+  boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const menuItem = {
+  padding: "11px 14px",
+  fontSize: 13,
+  fontWeight: 600,
+  textAlign: "left",
+  border: "none",
+  borderBottom: `1px solid ${C.line}`,
+  background: "#fff",
+  color: C.ink,
+  cursor: "pointer",
+};
