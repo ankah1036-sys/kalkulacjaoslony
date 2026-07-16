@@ -421,20 +421,27 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
           style={{ ...inp, minHeight: 150, resize: "vertical", fontFamily: "monospace", fontSize: 13 }}
         />
       ) : (
-        <div
-          onClick={() => fileRef.current?.click()}
-          style={{ border: `2px dashed ${C.line}`, padding: 24, textAlign: "center", cursor: "pointer", background: "#fff" }}
-        >
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
-          {image ? (
-            <div>
-              <img src={`data:${image.media_type};base64,${image.data}`} alt="rysunek" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
-              <div style={{ fontSize: 12, color: C.steel, marginTop: 8 }}>{image.name} · kliknij, by zmienić</div>
-            </div>
-          ) : (
-            <div style={{ color: C.steel, fontSize: 14 }}>Kliknij, aby wgrać rysunek lub zdjęcie z wymiarami</div>
-          )}
-        </div>
+        <>
+          <div
+            onClick={() => fileRef.current?.click()}
+            style={{ border: `2px dashed ${C.line}`, padding: 24, textAlign: "center", cursor: "pointer", background: "#fff" }}
+          >
+            <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+            {image ? (
+              <div>
+                <img src={`data:${image.media_type};base64,${image.data}`} alt="rysunek" style={{ maxWidth: "100%", maxHeight: 220, objectFit: "contain" }} />
+                <div style={{ fontSize: 12, color: C.steel, marginTop: 8 }}>{image.name} · kliknij, by zmienić</div>
+              </div>
+            ) : (
+              <div style={{ color: C.steel, fontSize: 14 }}>Kliknij, aby wgrać rysunek lub zdjęcie z wymiarami</div>
+            )}
+          </div>
+          <div style={{ marginTop: 8, padding: "8px 12px", background: "#faf3e6", border: `1px solid ${C.brass}`, fontSize: 12, color: C.steel, lineHeight: 1.5 }}>
+            <strong style={{ color: C.brass }}>Wskazówka:</strong> jeśli to mail na komputerze, <strong>skopiuj tekst</strong> i wklej w zakładkę
+            „Treść maila" — działa pewniej niż zdjęcie. Zdjęcia sprawdzają się dla wyraźnych <strong>wydruków i skanów</strong>;
+            fotki ekranu bywają nieczytelne dla programu.
+          </div>
+        </>
       )}
 
       <button
