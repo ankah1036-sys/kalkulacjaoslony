@@ -250,7 +250,7 @@ export default function Quotes({ onEdit }) {
 
       <div style={{ marginBottom: 16 }}>
         <div style={lbl}>Szukaj (nr oferty, firma, klient)</div>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="np. OF/2026 lub Kowalski" style={inp} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="np. OF01 lub Kowalski" style={inp} />
       </div>
 
       {error && <div style={{ marginBottom: 14, padding: 12, background: "#fff", borderLeft: `4px solid ${C.red}`, color: C.red, fontSize: 14 }}>{error}</div>}

@@ -37,7 +37,7 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
   const [showAcc, setShowAcc] = useState(false);
   const [accDraft, setAccDraft] = useState([]); // robocza lista w modalu (zatwierdzana „Zapisz")
   const [sentTo, setSentTo] = useState(null); // po wysyłce: adres odbiorcy (null = modal zamknięty)
-  const [offerNo, setOfferNo] = useState(() => "OF/" + new Date().toISOString().slice(0, 10).replace(/-/g, "/"));
+  const [offerNo, setOfferNo] = useState("");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -97,6 +97,36 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingQuote]);
 
+  // Numer oferty: OFxx/MM/RRRR. Numeracja rusza od 01 na początku każdego miesiąca,
+  // a miesiąc i rok w numerze sprawiają, że numery nie powtarzają się między miesiącami.
+  const nextOfferNo = async () => {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const yyyy = String(now.getFullYear());
+    const suffix = `/${mm}/${yyyy}`;
+    const re = /^OF0*(\d+)\/(\d{2})\/(\d{4})$/;
+    let max = 0;
+    try {
+      const { data } = await supabase.from("quotes").select("offer_no").like("offer_no", `OF%${suffix}`);
+      for (const r of data || []) {
+        const m = re.exec(r.offer_no || "");
+        if (m && `/${m[2]}/${m[3]}` === suffix) max = Math.max(max, Number(m[1]));
+      }
+    } catch {
+      // Brak połączenia — zaczynamy od 01; numer można poprawić ręcznie.
+    }
+    return `OF${String(max + 1).padStart(2, "0")}${suffix}`;
+  };
+
+  // Nowa wycena (nie edycja): nadaj kolejny numer w bieżącym miesiącu.
+  useEffect(() => {
+    if (editingQuote || editId || offerNo) return;
+    let alive = true;
+    nextOfferNo().then((n) => { if (alive) setOfferNo(n); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingQuote, editId]);
+
   const cancelEdit = () => {
     setEditId(null);
     setOrigClientId(null);
@@ -109,6 +139,8 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
     setImage(null);
     setSaved(false);
     setError("");
+    setOfferNo("");
+    nextOfferNo().then(setOfferNo);
   };
 
   const handleFile = (e) => {
@@ -361,6 +393,8 @@ export default function Calculator({ onSaved, editingQuote, onEditLoaded }) {
 
       setSaved(true);
       onSaved?.();
+      // Nowa wycena zapisana — przygotuj kolejny numer na następną.
+      if (!editId) nextOfferNo().then(setOfferNo);
     } catch (err) {
       setError("Nie udało się zapisać wyceny. " + toPolish(err, "Spróbuj ponownie."));
     } finally {
